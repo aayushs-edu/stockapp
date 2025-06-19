@@ -1,0 +1,41 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id     Int    @id @default(autoincrement()) @db.UnsignedInt
+  userid String @unique
+  name   String
+
+  @@map("accounts")
+}
+
+model Stock {
+  id         Int      @id @default(autoincrement()) @db.UnsignedInt
+  userid     String
+  date       DateTime
+  stock      String
+  action     Action
+  source     String?
+  quantity   Float
+  price      Float
+  tradeValue Float    @map("trade_value")
+  brokerage  Float
+  orderRef   String?  @map("order_ref")
+  remarks    String?  @db.Text
+
+  @@index([stock])
+  @@index([date])
+  @@index([userid, date])
+  @@map("stockdata")
+}
+
+enum Action {
+  Buy
+  Sell
+}
