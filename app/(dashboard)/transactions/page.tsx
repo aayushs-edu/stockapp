@@ -15,7 +15,7 @@ import {
   ColumnFiltersState,
   FilterFn,
 } from '@tanstack/react-table'
-import { ArrowUpDown, Download } from 'lucide-react'
+import { ArrowUpDown, Download, CalendarIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -33,9 +33,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import { Calendar } from '@/components/ui/calendar'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+} from '@/components/ui/command'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatCurrency } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 
 type Transaction = {
   id: number
@@ -67,11 +81,21 @@ export default function TransactionsPage() {
   const [loading, setLoading] = useState(true)
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
-  const [globalFilter, setGlobalFilter] = useState('')
   
   // Add state for manual filters
   const [accountFilter, setAccountFilter] = useState<string>('all')
   const [actionFilter, setActionFilter] = useState<string>('all')
+  const [stockFilter, setStockFilter] = useState<string>('')
+  const [stockSearchOpen, setStockSearchOpen] = useState(false)
+  const [stockSearchValue, setStockSearchValue] = useState('')
+  const [dateFrom, setDateFrom] = useState<Date>()
+  const [dateTo, setDateTo] = useState<Date>()
+
+  // Get unique stocks for autocomplete
+  const uniqueStocks = useMemo(() => {
+    const stocks = new Set(data.map(t => t.stock))
+    return Array.from(stocks).sort()
+  }, [data])
 
   const columns: ColumnDef<Transaction>[] = [
     {
@@ -204,8 +228,21 @@ export default function TransactionsPage() {
       filtered = filtered.filter(item => item.action === actionFilter)
     }
     
+    // Apply stock filter
+    if (stockFilter) {
+      filtered = filtered.filter(item => item.stock === stockFilter)
+    }
+    
+    // Apply date filters
+    if (dateFrom) {
+      filtered = filtered.filter(item => new Date(item.date) >= dateFrom)
+    }
+    if (dateTo) {
+      filtered = filtered.filter(item => new Date(item.date) <= dateTo)
+    }
+    
     return filtered
-  }, [data, accountFilter, actionFilter])
+  }, [data, accountFilter, actionFilter, stockFilter, dateFrom, dateTo])
 
   useEffect(() => {
     fetchData()
@@ -269,11 +306,9 @@ export default function TransactionsPage() {
     getFilteredRowModel: getFilteredRowModel(),
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
-    onGlobalFilterChange: setGlobalFilter,
     state: {
       sorting,
       columnFilters,
-      globalFilter,
     },
   })
 
@@ -369,20 +404,136 @@ export default function TransactionsPage() {
               </SelectContent>
             </Select>
 
-            <Input
-              placeholder="Search stocks..."
-              value={(table.getColumn('stock')?.getFilterValue() as string) ?? ''}
-              onChange={(event) =>
-                table.getColumn('stock')?.setFilterValue(event.target.value)
-              }
-            />
+            {/* Stock Autocomplete */}
+            <Popover open={stockSearchOpen} onOpenChange={setStockSearchOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={stockSearchOpen}
+                  className="justify-between"
+                >
+                  {stockFilter || "Select stock..."}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[200px] p-0">
+                <div className="flex flex-col">
+                  <Input
+                    placeholder="Search stock..."
+                    value={stockSearchValue}
+                    onChange={(e) => setStockSearchValue(e.target.value)}
+                    className="m-2"
+                  />
+                  <div className="max-h-[200px] overflow-y-auto">
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-start px-2 py-1.5 text-sm"
+                      onClick={() => {
+                        setStockFilter('')
+                        setStockSearchOpen(false)
+                        setStockSearchValue('')
+                      }}
+                    >
+                      All Stocks
+                    </Button>
+                    {uniqueStocks
+                      .filter(stock => 
+                        stock.toLowerCase().includes(stockSearchValue.toLowerCase())
+                      )
+                      .map((stock) => (
+                        <Button
+                          key={stock}
+                          variant="ghost"
+                          className="w-full justify-start px-2 py-1.5 text-sm hover:bg-accent"
+                          onClick={() => {
+                            setStockFilter(stock)
+                            setStockSearchOpen(false)
+                            setStockSearchValue('')
+                          }}
+                        >
+                          {stock}
+                        </Button>
+                      ))}
+                    {uniqueStocks.filter(stock => 
+                      stock.toLowerCase().includes(stockSearchValue.toLowerCase())
+                    ).length === 0 && (
+                      <div className="px-2 py-6 text-center text-sm text-muted-foreground">
+                        No stock found.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
 
-            <Input
-              placeholder="Search all columns..."
-              value={globalFilter ?? ''}
-              onChange={(event) => setGlobalFilter(event.target.value)}
-            />
+            {/* Date Range Filter */}
+            <div className="flex gap-2">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "justify-start text-left font-normal flex-1",
+                      !dateFrom && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {dateFrom ? format(dateFrom, "MMM d") : "From"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={dateFrom}
+                    onSelect={setDateFrom}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+              
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "justify-start text-left font-normal flex-1",
+                      !dateTo && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {dateTo ? format(dateTo, "MMM d") : "To"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={dateTo}
+                    onSelect={setDateTo}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
           </div>
+          
+          {/* Clear Filters Button */}
+          {(accountFilter !== 'all' || actionFilter !== 'all' || stockFilter || dateFrom || dateTo) && (
+            <div className="mt-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setAccountFilter('all')
+                  setActionFilter('all')
+                  setStockFilter('')
+                  setDateFrom(undefined)
+                  setDateTo(undefined)
+                }}
+              >
+                Clear All Filters
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -443,7 +594,7 @@ export default function TransactionsPage() {
         <div className="flex-1 text-sm text-muted-foreground">
           Showing {table.getFilteredRowModel().rows.length} of{" "}
           {filteredData.length} row(s)
-          {(accountFilter !== 'all' || actionFilter !== 'all') && ' (filtered)'}
+          {(accountFilter !== 'all' || actionFilter !== 'all' || stockFilter || dateFrom || dateTo) && ' (filtered)'}
         </div>
         <div className="flex items-center space-x-6 lg:space-x-8">
           <div className="flex items-center space-x-2">

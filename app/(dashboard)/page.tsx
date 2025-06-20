@@ -4,6 +4,7 @@ import { DashboardStats } from '@/components/dashboard/stats'
 import { RecentTransactions } from '@/components/dashboard/recent-transactions'
 import { StockOverview } from '@/components/dashboard/stock-overview'
 import { DashboardCharts } from '@/components/dashboard/dashboard-charts'
+import { AllStocksTable } from '@/components/dashboard/all-stocks-table'
 import { Loader2 } from 'lucide-react'
 
 export default function DashboardPage() {
@@ -32,6 +33,11 @@ export default function DashboardPage() {
       {/* Charts Section - Client Component */}
       <Suspense fallback={<div className="flex justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>}>
         <DashboardCharts />
+      </Suspense>
+      
+      {/* All Stocks Table */}
+      <Suspense fallback={<div className="flex justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>}>
+        <AllStocksTable />
       </Suspense>
       
       {/* Two Column Layout */}

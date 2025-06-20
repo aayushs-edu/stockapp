@@ -3,7 +3,8 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { format } from 'date-fns'
-import { ChevronDown, ChevronRight, Download, TrendingUp, TrendingDown } from 'lucide-react'
+import { useSearchParams } from 'next/navigation'
+import { ChevronDown, ChevronRight, Download, TrendingUp, TrendingDown, CalendarIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -14,6 +15,19 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import { Calendar } from '@/components/ui/calendar'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+} from '@/components/ui/command'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatCurrency } from '@/lib/utils'
@@ -66,15 +80,36 @@ type StockSummary = {
 }
 
 export default function SummaryBookPage() {
+  const searchParams = useSearchParams()
+  const stockFromUrl = searchParams.get('stock')
+  
   const [data, setData] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
   const [globalFilter, setGlobalFilter] = useState('')
+  const [stockFilter, setStockFilter] = useState<string>(stockFromUrl || '')
+  const [stockSearchOpen, setStockSearchOpen] = useState(false)
+  const [stockSearchValue, setStockSearchValue] = useState('')
+  const [dateFrom, setDateFrom] = useState<Date>()
+  const [dateTo, setDateTo] = useState<Date>()
   const [expandedStocks, setExpandedStocks] = useState<Set<string>>(new Set())
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set())
+
+  // Get unique stocks for autocomplete
+  const uniqueStocks = useMemo(() => {
+    const stocks = new Set(data.map(t => t.stock))
+    return Array.from(stocks).sort()
+  }, [data])
 
   useEffect(() => {
     fetchData()
   }, [])
+
+  // Auto-expand if stock filter is set from URL
+  useEffect(() => {
+    if (stockFromUrl && data.length > 0) {
+      setExpandedStocks(new Set([stockFromUrl]))
+    }
+  }, [stockFromUrl, data])
 
   const fetchData = async () => {
     setLoading(true)
@@ -105,8 +140,17 @@ export default function SummaryBookPage() {
   const stockSummaries = useMemo(() => {
     const summaryMap = new Map<string, StockSummary>()
     
+    // Filter data by date range first
+    let filteredData = data
+    if (dateFrom) {
+      filteredData = filteredData.filter(t => new Date(t.date) >= dateFrom)
+    }
+    if (dateTo) {
+      filteredData = filteredData.filter(t => new Date(t.date) <= dateTo)
+    }
+    
     // Group transactions by stock and account
-    data.forEach(transaction => {
+    filteredData.forEach(transaction => {
       let stockSummary = summaryMap.get(transaction.stock)
       if (!stockSummary) {
         stockSummary = {
@@ -182,19 +226,24 @@ export default function SummaryBookPage() {
     // Convert to array and sort
     const summaries = Array.from(summaryMap.values())
     
-    // Filter based on global filter
-    if (globalFilter) {
-      return summaries.filter(stock => 
-        stock.stock.toLowerCase().includes(globalFilter.toLowerCase()) ||
-        stock.accounts.some(account => 
-          account.userid.toLowerCase().includes(globalFilter.toLowerCase()) ||
-          account.name.toLowerCase().includes(globalFilter.toLowerCase())
-        )
-      )
+    // Filter based on global filter and stock filter
+    if (globalFilter || stockFilter) {
+      return summaries.filter(stock => {
+        const matchesGlobal = !globalFilter || 
+          stock.stock.toLowerCase().includes(globalFilter.toLowerCase()) ||
+          stock.accounts.some(account => 
+            account.userid.toLowerCase().includes(globalFilter.toLowerCase()) ||
+            account.name.toLowerCase().includes(globalFilter.toLowerCase())
+          )
+        
+        const matchesStock = !stockFilter || stock.stock === stockFilter
+        
+        return matchesGlobal && matchesStock
+      })
     }
     
     return summaries.sort((a, b) => a.stock.localeCompare(b.stock))
-  }, [data, globalFilter])
+  }, [data, globalFilter, stockFilter, dateFrom, dateTo])
 
   const toggleStockExpansion = (stock: string) => {
     const newExpanded = new Set(expandedStocks)
@@ -360,12 +409,142 @@ export default function SummaryBookPage() {
           <CardTitle>Filter</CardTitle>
         </CardHeader>
         <CardContent>
-          <Input
-            placeholder="Search by stock symbol or account..."
-            value={globalFilter}
-            onChange={(e) => setGlobalFilter(e.target.value)}
-            className="max-w-sm"
-          />
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Input
+              placeholder="Search by account..."
+              value={globalFilter}
+              onChange={(e) => setGlobalFilter(e.target.value)}
+            />
+            
+            {/* Stock Autocomplete */}
+            <Popover open={stockSearchOpen} onOpenChange={setStockSearchOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={stockSearchOpen}
+                  className="justify-between"
+                >
+                  {stockFilter || "Select stock..."}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[200px] p-0">
+                <div className="flex flex-col">
+                  <Input
+                    placeholder="Search stock..."
+                    value={stockSearchValue}
+                    onChange={(e) => setStockSearchValue(e.target.value)}
+                    className="m-2"
+                  />
+                  <div className="max-h-[200px] overflow-y-auto">
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-start px-2 py-1.5 text-sm"
+                      onClick={() => {
+                        setStockFilter('')
+                        setStockSearchOpen(false)
+                        setStockSearchValue('')
+                      }}
+                    >
+                      All Stocks
+                    </Button>
+                    {uniqueStocks
+                      .filter(stock => 
+                        stock.toLowerCase().includes(stockSearchValue.toLowerCase())
+                      )
+                      .map((stock) => (
+                        <Button
+                          key={stock}
+                          variant="ghost"
+                          className="w-full justify-start px-2 py-1.5 text-sm hover:bg-accent"
+                          onClick={() => {
+                            setStockFilter(stock)
+                            setStockSearchOpen(false)
+                            setStockSearchValue('')
+                          }}
+                        >
+                          {stock}
+                        </Button>
+                      ))}
+                    {uniqueStocks.filter(stock => 
+                      stock.toLowerCase().includes(stockSearchValue.toLowerCase())
+                    ).length === 0 && (
+                      <div className="px-2 py-6 text-center text-sm text-muted-foreground">
+                        No stock found.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+
+            {/* Date Range Filter */}
+            <div className="flex gap-2">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "justify-start text-left font-normal flex-1",
+                      !dateFrom && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {dateFrom ? format(dateFrom, "MMM d, yyyy") : "From"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={dateFrom}
+                    onSelect={setDateFrom}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+              
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "justify-start text-left font-normal flex-1",
+                      !dateTo && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {dateTo ? format(dateTo, "MMM d, yyyy") : "To"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={dateTo}
+                    onSelect={setDateTo}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+          </div>
+          
+          {/* Clear Filters Button */}
+          {(globalFilter || stockFilter || dateFrom || dateTo) && (
+            <div className="mt-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setGlobalFilter('')
+                  setStockFilter('')
+                  setDateFrom(undefined)
+                  setDateTo(undefined)
+                }}
+              >
+                Clear All Filters
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 
