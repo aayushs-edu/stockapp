@@ -356,7 +356,8 @@ export default function TransactionsPage() {
         avgSellPrice: 0,
         netQty: 0,
         remainingAvgBuyPrice: 0,
-        currentInvestment: 0
+        currentInvestment: 0,
+        remainingBuyValue: 0 // Added default
       }
     }
 
@@ -380,7 +381,7 @@ export default function TransactionsPage() {
     
     // Calculate remaining average buy price using FIFO
     let remainingAvgBuyPrice = 0
-    
+    let remainingBuyValue = 0;
     if (netQty > 0 && buyTransactions.length > 0) {
       // Sort buy transactions by date (oldest first for FIFO)
       const sortedBuyTransactions = [...buyTransactions].sort((a, b) => 
@@ -419,6 +420,12 @@ export default function TransactionsPage() {
       const totalRemainingValue = remainingShares.reduce((sum, s) => sum + s.value, 0)
       const totalRemainingQty = remainingShares.reduce((sum, s) => sum + s.quantity, 0)
       remainingAvgBuyPrice = totalRemainingQty > 0 ? totalRemainingValue / totalRemainingQty : 0
+      // Calculate Remaining Buy Value
+      remainingBuyValue = totalRemainingQty * remainingAvgBuyPrice;
+      // Unrealized gain: (current market price - remainingAvgBuyPrice) * netQty
+      // For now, assume current market price is the last buy price (can be replaced with real market data)
+      // const currentMarketPrice = sortedBuyTransactions[sortedBuyTransactions.length - 1]?.price || 0;
+      // unrealizedGain = netQty * (currentMarketPrice - remainingAvgBuyPrice);
     }
 
     return { 
@@ -430,7 +437,8 @@ export default function TransactionsPage() {
       avgSellPrice,
       netQty,
       remainingAvgBuyPrice,
-      currentInvestment
+      currentInvestment,
+      remainingBuyValue // Use this instead of unrealizedGain
     }
   }
 
@@ -780,14 +788,11 @@ export default function TransactionsPage() {
                   <div className="space-y-1">
                     <p className="text-sm text-muted-foreground">Remaining Avg Buy Price</p>
                     <p className="text-lg font-semibold text-primary">
-                      {summary.remainingAvgBuyPrice > 0 ? formatCurrency(summary.remainingAvgBuyPrice) : '-'}
-                    </p>
+                      {summary.remainingAvgBuyPrice > 0 ? formatCurrency(summary.remainingAvgBuyPrice) : '-'}</p>
                   </div>
                   <div className="space-y-1">
-                    <p className="text-sm text-muted-foreground">Current Investment</p>
-                    <p className="text-lg font-semibold">
-                      {formatCurrency(summary.currentInvestment)}
-                    </p>
+                    <p className="text-sm text-muted-foreground">Remaining Buy Value</p>
+                    <p className="text-lg font-semibold">{formatCurrency(summary.remainingBuyValue)}</p>
                   </div>
                 </div>
               </div>
