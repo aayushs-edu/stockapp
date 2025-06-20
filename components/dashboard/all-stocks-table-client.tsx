@@ -115,52 +115,28 @@ export function AllStocksTableClient({
             </SelectContent>
           </Select>
         </div>
-        
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+        <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2">
           {sortedStocks.map((stock) => (
             <Button
               key={stock.stock}
               variant="outline"
               className={cn(
-                "h-auto py-3 px-4 flex flex-col items-start justify-between gap-2 transition-all relative overflow-hidden",
+                "h-auto py-3 px-4 flex items-center justify-center transition-all relative overflow-hidden font-semibold text-sm",
+                stock.status === 'Closed' && "bg-gray-100 text-gray-400 border-gray-300 opacity-70 hover:bg-gray-100 hover:border-gray-300 hover:text-gray-400",
                 stock.status === 'Active' 
                   ? "hover:bg-green-50 hover:border-green-500 dark:hover:bg-green-950/20" 
-                  : "hover:bg-gray-50 hover:border-gray-400 dark:hover:bg-gray-950/20 opacity-75"
+                  : "hover:bg-gray-50 hover:border-gray-400 dark:hover:bg-gray-950/20",
+                "hover:text-inherit focus:text-inherit active:text-inherit"
               )}
               onClick={() => handleStockClick(stock.stock)}
             >
-              <div className="w-full">
-                <div className="flex items-start justify-between w-full">
-                  <span className={cn(
-                    "font-semibold text-sm",
-                    stock.status === 'Closed' && "text-muted-foreground"
-                  )}>
-                    {stock.stock}
-                  </span>
-                  <div className={cn(
-                    "w-2 h-2 rounded-full mt-0.5",
-                    stock.status === 'Active' ? "bg-green-500" : "bg-gray-400"
-                  )} />
-                </div>
-              </div>
-              
-              <div className="w-full space-y-1">
-                {stock.lastUser && (
-                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <User className="h-3 w-3" />
-                    <span>{stock.lastUser}</span>
-                  </div>
-                )}
-                {stock.lastTransaction && (
-                  <div className="text-xs text-muted-foreground">
-                    {new Date(stock.lastTransaction).toLocaleDateString('en-IN', {
-                      day: '2-digit',
-                      month: 'short',
-                      year: '2-digit'
-                    })}
-                  </div>
-                )}
-              </div>
+              <span className="flex items-center gap-2">
+                <span className={cn(
+                  "w-2 h-2 rounded-full",
+                  stock.status === 'Active' ? "bg-green-500" : "bg-gray-400"
+                )} />
+                {stock.stock}
+              </span>
             </Button>
           ))}
         </div>
