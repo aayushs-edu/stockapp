@@ -80,6 +80,11 @@ export default function TransactionsPage() {
       cell: ({ row }) => <div className="w-16">{row.getValue('id')}</div>,
     },
     {
+      accessorKey: 'userid',
+      header: 'User ID',
+      cell: ({ row }) => <div className="font-medium">{row.getValue('userid')}</div>,
+    },
+    {
       accessorKey: 'date',
       header: ({ column }) => {
         return (

@@ -99,20 +99,60 @@ export async function GET() {
       }))
       .sort((a, b) => a.month.localeCompare(b.month))
 
-    // Calculate win/loss ratio
-    const winningTrades = stockPnLArray.filter(s => s.realized > 0).length
-    const losingTrades = stockPnLArray.filter(s => s.realized < 0 && s.sellQty > 0).length
+    // Calculate win/loss ratio - using Prisma aggregation instead of raw SQL
+    const closedTrades = await prisma.stock.groupBy({
+      by: ['stock'],
+      where: {
+        action: 'Sell'
+      },
+      _sum: {
+        quantity: true,
+        tradeValue: true,
+        brokerage: true
+      }
+    })
+
+    const buyData = await prisma.stock.groupBy({
+      by: ['stock'],
+      where: {
+        action: 'Buy',
+        stock: {
+          in: closedTrades.map(t => t.stock)
+        }
+      },
+      _sum: {
+        quantity: true,
+        tradeValue: true,
+        brokerage: true
+      }
+    })
+
+    const buyMap = new Map(buyData.map(b => [b.stock, b]))
+    
+    const tradeResults = closedTrades.map(sell => {
+      const buy = buyMap.get(sell.stock)
+      if (!buy) return null
+      
+      const avgBuyPrice = (buy._sum.tradeValue! + buy._sum.brokerage!) / buy._sum.quantity!
+      const avgSellPrice = (sell._sum.tradeValue! - sell._sum.brokerage!) / sell._sum.quantity!
+      const realized = (avgSellPrice - avgBuyPrice) * Math.min(buy._sum.quantity!, sell._sum.quantity!)
+      
+      return { stock: sell.stock, realized }
+    }).filter(r => r !== null)
+
+    const winningTrades = tradeResults.filter(t => t!.realized > 0).length
+    const losingTrades = tradeResults.filter(t => t!.realized < 0).length
     const winRate = winningTrades + losingTrades > 0 
       ? (winningTrades / (winningTrades + losingTrades)) * 100 
       : 0
 
     // Calculate average profit per winning trade and average loss per losing trade
     const avgWin = winningTrades > 0
-      ? stockPnLArray.filter(s => s.realized > 0).reduce((sum, s) => sum + s.realized, 0) / winningTrades
+      ? tradeResults.filter(t => t!.realized > 0).reduce((sum, t) => sum + t!.realized, 0) / winningTrades
       : 0
     
     const avgLoss = losingTrades > 0
-      ? Math.abs(stockPnLArray.filter(s => s.realized < 0 && s.sellQty > 0).reduce((sum, s) => sum + s.realized, 0) / losingTrades)
+      ? Math.abs(tradeResults.filter(t => t!.realized < 0).reduce((sum, t) => sum + t!.realized, 0) / losingTrades)
       : 0
 
     return NextResponse.json({

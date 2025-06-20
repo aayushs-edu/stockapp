@@ -115,13 +115,13 @@ export async function GET() {
     const stockPerformance = await prisma.$queryRaw`
       SELECT 
         stock,
-        SUM(CASE WHEN action = 'Buy' THEN quantity ELSE 0 END) as buyQty,
-        SUM(CASE WHEN action = 'Sell' THEN quantity ELSE 0 END) as sellQty,
-        SUM(CASE WHEN action = 'Buy' THEN trade_value + brokerage ELSE 0 END) as totalBuy,
-        SUM(CASE WHEN action = 'Sell' THEN trade_value - brokerage ELSE 0 END) as totalSell
+        SUM(CASE WHEN action = 'Buy' THEN quantity ELSE 0 END) as "buyQty",
+        SUM(CASE WHEN action = 'Sell' THEN quantity ELSE 0 END) as "sellQty",
+        SUM(CASE WHEN action = 'Buy' THEN trade_value + brokerage ELSE 0 END) as "totalBuy",
+        SUM(CASE WHEN action = 'Sell' THEN trade_value - brokerage ELSE 0 END) as "totalSell"
       FROM stockdata
       GROUP BY stock
-      HAVING sellQty > 0
+      HAVING SUM(CASE WHEN action = 'Sell' THEN quantity ELSE 0 END) > 0
     ` as any[]
 
     const performanceData = stockPerformance.map(s => ({
