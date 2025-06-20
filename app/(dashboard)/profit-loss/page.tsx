@@ -28,6 +28,7 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { formatCurrency } from '@/lib/utils'
 import { Loader2, TrendingUp, TrendingDown, Target, BarChart3, Calendar, CalendarDays, CalendarRange, DollarSign, Percent, Activity, Trophy } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 const monthRanges = [
   { label: '3M', value: 3, icon: Calendar },
@@ -36,6 +37,26 @@ const monthRanges = [
   { label: '24M', value: 24, icon: CalendarRange },
   { label: 'All', value: -1, icon: CalendarRange },
 ]
+
+interface StockDetail {
+  stock: string
+  action: 'Buy' | 'Sell'
+  quantity: number
+  avgPrice: number
+  pnl: number
+  transactions: number
+}
+
+interface MonthlyData {
+  month: string
+  realized: number
+  unrealized: number
+  total: number
+  stocks: StockDetail[]
+  totalTransactions: number
+  profitableStocks: number
+  lossStocks: number
+}
 
 export default function ProfitLossPage() {
   const [data, setData] = useState<any>(null)
@@ -71,9 +92,9 @@ export default function ProfitLossPage() {
   // Calculate metrics for the selected period
   const periodMetrics = useMemo(() => {
     const periodData = filteredMonthlyData
-    const totalRealized = periodData.reduce((sum: number, m: any) => sum + (m.realized || 0), 0)
-    const profitableMonths = periodData.filter((m: any) => m.realized > 0).length
-    const lossMonths = periodData.filter((m: any) => m.realized < 0).length
+    const totalRealized = periodData.reduce((sum: number, m: MonthlyData) => sum + (m.realized || 0), 0)
+    const profitableMonths = periodData.filter((m: MonthlyData) => m.realized > 0).length
+    const lossMonths = periodData.filter((m: MonthlyData) => m.realized < 0).length
     
     return {
       totalRealized,
@@ -91,19 +112,85 @@ export default function ProfitLossPage() {
     )
   }
 
+  // Enhanced Custom Tooltip with stock details
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
+      const data = payload[0].payload as MonthlyData
+      const monthDate = new Date(data.month + '-01')
+      const monthName = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+      
       return (
-        <div className="bg-background border rounded-lg shadow-lg p-4">
-          <p className="text-sm font-medium mb-2">{label}</p>
-          {payload.map((entry: any, index: number) => (
-            <p key={index} className="text-sm">
-              <span className="text-muted-foreground">{entry.name}:</span>{' '}
-              <span className={`font-medium ${entry.value >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {formatCurrency(Math.abs(entry.value))}
+        <div className="bg-background border rounded-lg shadow-lg p-4 max-w-md">
+          <div className="text-sm font-medium mb-3 pb-2 border-b">
+            {monthName}
+          </div>
+          
+          {/* P&L Summary */}
+          <div className="space-y-2 mb-3">
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">Realized P&L:</span>
+              <span className={`font-medium ${data.realized >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {data.realized >= 0 ? '+' : ''}{formatCurrency(data.realized)}
               </span>
-            </p>
-          ))}
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">Transactions:</span>
+              <span className="font-medium">{data.totalTransactions}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">Active Stocks:</span>
+              <span className="font-medium">{(data.stocks?.length ?? 0)}</span>
+            </div>
+            {(data.stocks?.length ?? 0) > 0 && (
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Performance:</span>
+                <div className="flex gap-2">
+                  <Badge variant="outline" className="text-green-600 border-green-600">
+                    {data.profitableStocks} wins
+                  </Badge>
+                  <Badge variant="outline" className="text-red-600 border-red-600">
+                    {data.lossStocks} losses
+                  </Badge>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Top Stock Contributors */}
+          {(data.stocks?.length ?? 0) > 0 && (
+            <div className="pt-2 border-t">
+              <div className="text-xs font-medium text-muted-foreground mb-2">
+                Top Contributors:
+              </div>
+              <div className="space-y-1 max-h-32 overflow-y-auto">
+                {(data.stocks ?? []).slice(0, 5).map((stock: StockDetail, index: number) => (
+                  <div key={stock.stock} className="flex justify-between items-center text-xs">
+                    <div className="flex items-center gap-1">
+                      <div className={cn(
+                        "w-2 h-2 rounded-full",
+                        stock.pnl >= 0 ? "bg-green-500" : "bg-red-500"
+                      )} />
+                      <span className="font-medium">{stock.stock}</span>
+                      {stock.transactions > 1 && (
+                        <span className="text-muted-foreground">({stock.transactions}x)</span>
+                      )}
+                    </div>
+                    <span className={cn(
+                      "font-medium",
+                      stock.pnl >= 0 ? "text-green-600" : "text-red-600"
+                    )}>
+                      {stock.pnl >= 0 ? '+' : ''}{formatCurrency(stock.pnl)}
+                    </span>
+                  </div>
+                ))}
+                {(data.stocks?.length ?? 0) > 5 && (
+                  <div className="text-xs text-muted-foreground text-center pt-1">
+                    ...and {(data.stocks?.length ?? 0) - 5} more stocks
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )
     }
@@ -256,7 +343,7 @@ export default function ProfitLossPage() {
                 <div>
                   <CardTitle>Monthly Profit & Loss Trend</CardTitle>
                   <CardDescription>
-                    Track your monthly trading performance over time
+                    Track your monthly trading performance over time. Hover over bars for detailed stock breakdown.
                   </CardDescription>
                 </div>
                 <div className="flex gap-1">

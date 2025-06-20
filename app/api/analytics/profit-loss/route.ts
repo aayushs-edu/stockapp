@@ -11,7 +11,7 @@ export async function GET() {
   }
 
   try {
-    // Get all transactions
+    // Get all transactions ordered by date
     const transactions = await prisma.stock.findMany({
       orderBy: { date: 'asc' }
     })
@@ -72,30 +72,81 @@ export async function GET() {
       totalPnL: data.realized + data.unrealized
     }))
 
-    // Monthly P&L
-    const monthlyPnL = new Map<string, { realized: number; unrealized: number }>()
+    // Enhanced Monthly P&L calculation with stock details
+    const monthlyPnL = new Map<string, { 
+      realized: number
+      unrealized: number
+      stocks: Array<{
+        stock: string
+        action: 'Buy' | 'Sell'
+        quantity: number
+        avgPrice: number
+        pnl: number
+        transactions: number
+      }>
+      totalTransactions: number
+    }>()
     
+    // Group transactions by month and calculate detailed P&L
     transactions.forEach(t => {
       const monthKey = t.date.toISOString().substring(0, 7) // YYYY-MM
-      const month = monthlyPnL.get(monthKey) || { realized: 0, unrealized: 0 }
+      const month = monthlyPnL.get(monthKey) || { 
+        realized: 0, 
+        unrealized: 0, 
+        stocks: [],
+        totalTransactions: 0
+      }
+      
+      month.totalTransactions++
+      
+      // Find or create stock entry for this month
+      let stockEntry = month.stocks.find(s => s.stock === t.stock)
+      if (!stockEntry) {
+        stockEntry = {
+          stock: t.stock,
+          action: t.action,
+          quantity: 0,
+          avgPrice: 0,
+          pnl: 0,
+          transactions: 0
+        }
+        month.stocks.push(stockEntry)
+      }
+      
+      stockEntry.transactions++
       
       if (t.action === 'Sell') {
-        const stock = stockPnL.get(t.stock)
-        if (stock) {
-          const costBasis = stock.avgBuyPrice * t.quantity
+        const stockData = stockPnL.get(t.stock)
+        if (stockData) {
+          const costBasis = stockData.avgBuyPrice * t.quantity
           const saleProceeds = t.tradeValue - t.brokerage
-          month.realized += saleProceeds - costBasis
+          const tradePnL = saleProceeds - costBasis
+          
+          month.realized += tradePnL
+          stockEntry.pnl += tradePnL
+          stockEntry.quantity += t.quantity
+          stockEntry.avgPrice = (stockEntry.avgPrice * (stockEntry.quantity - t.quantity) + t.price * t.quantity) / stockEntry.quantity
         }
+      } else {
+        // For buy transactions, just track the activity
+        stockEntry.quantity += t.quantity
+        stockEntry.avgPrice = (stockEntry.avgPrice * (stockEntry.quantity - t.quantity) + t.price * t.quantity) / stockEntry.quantity
       }
       
       monthlyPnL.set(monthKey, month)
     })
 
+    // Convert monthly data to array and sort
     const monthlyPnLArray = Array.from(monthlyPnL.entries())
       .map(([month, data]) => ({
         month,
-        ...data,
-        total: data.realized + data.unrealized
+        realized: data.realized,
+        unrealized: data.unrealized,
+        total: data.realized + data.unrealized,
+        stocks: data.stocks.sort((a, b) => Math.abs(b.pnl) - Math.abs(a.pnl)), // Sort by absolute P&L
+        totalTransactions: data.totalTransactions,
+        profitableStocks: data.stocks.filter(s => s.pnl > 0).length,
+        lossStocks: data.stocks.filter(s => s.pnl < 0).length
       }))
       .sort((a, b) => a.month.localeCompare(b.month))
 
@@ -157,7 +208,7 @@ export async function GET() {
 
     return NextResponse.json({
       stockPnL: stockPnLArray,
-      monthlyPnL: monthlyPnLArray.slice(-12), // Last 12 months
+      monthlyPnL: monthlyPnLArray, // Return all months, filtering will be done on frontend
       summary: {
         totalRealized: stockPnLArray.reduce((sum, s) => sum + s.realized, 0),
         totalUnrealized: stockPnLArray.reduce((sum, s) => sum + s.unrealized, 0),
