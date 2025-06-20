@@ -4,6 +4,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
+import { useLanguage } from '@/contexts/language-context'
 import {
   BarChart3,
   FileText,
@@ -16,53 +17,54 @@ import {
   PieChart
 } from 'lucide-react'
 
-const routes = [
-  {
-    href: '/',
-    label: 'Dashboard',
-    icon: Home,
-    description: 'Overview & analytics'
-  },
-  {
-    href: '/transactions',
-    label: 'Trade Book',
-    icon: FileText,
-    description: 'View all trades'
-  },
-  {
-    href: '/add-stock',
-    label: 'Add Stock',
-    icon: PlusCircle,
-    description: 'New transaction'
-  },
-  {
-    href: '/modify',
-    label: 'Modify',
-    icon: Edit,
-    description: 'Edit records'
-  },
-  {
-    href: '/accounts',
-    label: 'Accounts',
-    icon: Users,
-    description: 'Manage accounts'
-  },
-  {
-    href: '/profit-loss',
-    label: 'P&L Analysis',
-    icon: TrendingUp,
-    description: 'Profit & loss'
-  },
-  {
-    href: '/summary',
-    label: 'Summary',
-    icon: PieChart,
-    description: 'Portfolio overview'
-  }
-]
-
 export function MainNav() {
   const pathname = usePathname()
+  const { t } = useLanguage()
+
+  const routes = [
+    {
+      href: '/',
+      label: t.nav.dashboard,
+      icon: Home,
+      description: t.nav.dashboardDesc
+    },
+    {
+      href: '/transactions',
+      label: t.nav.tradeBook,
+      icon: FileText,
+      description: t.nav.tradeBookDesc
+    },
+    {
+      href: '/add-stock',
+      label: t.nav.addStock,
+      icon: PlusCircle,
+      description: t.nav.addStockDesc
+    },
+    {
+      href: '/modify',
+      label: t.nav.modify,
+      icon: Edit,
+      description: t.nav.modifyDesc
+    },
+    {
+      href: '/accounts',
+      label: t.nav.accounts,
+      icon: Users,
+      description: t.nav.accountsDesc
+    },
+    {
+      href: '/profit-loss',
+      label: t.nav.pnlAnalysis,
+      icon: TrendingUp,
+      description: t.nav.pnlDesc
+    },
+    {
+      href: '/summary',
+      label: t.nav.summary,
+      icon: PieChart,
+      description: t.nav.summaryDesc
+    }
+  ]
 
   return (
     <nav className="flex items-center space-x-6">
@@ -103,7 +105,7 @@ export function MainNav() {
               </div>
               
               {/* Tooltip */}
-              <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-2 px-2 py-1 bg-popover text-popover-foreground text-xs rounded-md shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap">
+              <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-2 px-2 py-1 bg-popover text-popover-foreground text-xs rounded-md shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-50">
                 {route.description}
                 <div className="absolute -top-1 left-1/2 transform -translate-x-1/2 w-2 h-2 bg-popover rotate-45" />
               </div>

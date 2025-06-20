@@ -3,12 +3,12 @@ generator client {
 }
 
 datasource db {
-  provider = "mysql"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
 model Account {
-  id     Int    @id @default(autoincrement()) @db.UnsignedInt
+  id     Int    @id @default(autoincrement()) 
   userid String @unique
   name   String
 
@@ -16,7 +16,7 @@ model Account {
 }
 
 model Stock {
-  id         Int      @id @default(autoincrement()) @db.UnsignedInt
+  id         Int      @id @default(autoincrement()) 
   userid     String
   date       DateTime
   stock      String
