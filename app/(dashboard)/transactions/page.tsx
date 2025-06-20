@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { format } from 'date-fns'
+import { useRouter } from 'next/navigation'
 import {
   ColumnDef,
   flexRender,
@@ -15,7 +16,7 @@ import {
   ColumnFiltersState,
   FilterFn,
 } from '@tanstack/react-table'
-import { ArrowUpDown, Download, CalendarIcon } from 'lucide-react'
+import { ArrowUpDown, Download, CalendarIcon, Edit2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -81,6 +82,7 @@ export default function TransactionsPage() {
   const [loading, setLoading] = useState(true)
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
+  const router = useRouter()
   
   // Add state for manual filters
   const [accountFilter, setAccountFilter] = useState<string>('all')
@@ -97,11 +99,28 @@ export default function TransactionsPage() {
     return Array.from(stocks).sort()
   }, [data])
 
+  const handleEditTransaction = (id: number) => {
+    router.push(`/modify/${id}`)
+  }
+
   const columns: ColumnDef<Transaction>[] = [
     {
       accessorKey: 'id',
       header: 'ID',
-      cell: ({ row }) => <div className="w-16">{row.getValue('id')}</div>,
+      cell: ({ row }) => (
+        <div className="flex items-center gap-2 w-20">
+          <span className="font-mono text-sm">{row.getValue('id')}</span>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 opacity-60 hover:opacity-100"
+            onClick={() => handleEditTransaction(row.original.id)}
+            title="Edit transaction"
+          >
+            <Edit2 className="h-3 w-3" />
+          </Button>
+        </div>
+      ),
     },
     {
       accessorKey: 'userid',
