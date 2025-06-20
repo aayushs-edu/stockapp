@@ -354,7 +354,9 @@ export default function TransactionsPage() {
         sellQty: 0,
         avgBuyPrice: 0,
         avgSellPrice: 0,
-        netQty: 0
+        netQty: 0,
+        remainingAvgBuyPrice: 0,
+        currentInvestment: 0
       }
     }
 
@@ -372,6 +374,52 @@ export default function TransactionsPage() {
     const totalSellValue = sellTransactions.reduce((sum, t) => sum + t.tradeValue, 0)
     const avgBuyPrice = buyQty > 0 ? totalBuyValue / buyQty : 0
     const avgSellPrice = sellQty > 0 ? totalSellValue / sellQty : 0
+    
+    // Calculate current investment (buy total - sell total)
+    const currentInvestment = buyTotal - sellTotal
+    
+    // Calculate remaining average buy price using FIFO
+    let remainingAvgBuyPrice = 0
+    
+    if (netQty > 0 && buyTransactions.length > 0) {
+      // Sort buy transactions by date (oldest first for FIFO)
+      const sortedBuyTransactions = [...buyTransactions].sort((a, b) => 
+        new Date(a.date).getTime() - new Date(b.date).getTime()
+      )
+      
+      // Track how many shares have been "used up" by sales
+      let sharesAccountedFor = 0
+      let remainingShares = []
+      
+      // Go through each buy transaction
+      for (const buyTx of sortedBuyTransactions) {
+        if (sharesAccountedFor >= sellQty) {
+          // All sold shares have been accounted for, this entire transaction remains
+          remainingShares.push({
+            quantity: buyTx.quantity,
+            price: buyTx.price,
+            value: buyTx.quantity * buyTx.price
+          })
+        } else if (sharesAccountedFor + buyTx.quantity <= sellQty) {
+          // This entire transaction was sold
+          sharesAccountedFor += buyTx.quantity
+        } else {
+          // This transaction was partially sold
+          const remainingQty = buyTx.quantity - (sellQty - sharesAccountedFor)
+          remainingShares.push({
+            quantity: remainingQty,
+            price: buyTx.price,
+            value: remainingQty * buyTx.price
+          })
+          sharesAccountedFor = sellQty
+        }
+      }
+      
+      // Calculate weighted average of remaining shares
+      const totalRemainingValue = remainingShares.reduce((sum, s) => sum + s.value, 0)
+      const totalRemainingQty = remainingShares.reduce((sum, s) => sum + s.quantity, 0)
+      remainingAvgBuyPrice = totalRemainingQty > 0 ? totalRemainingValue / totalRemainingQty : 0
+    }
 
     return { 
       buyTotal, 
@@ -380,7 +428,9 @@ export default function TransactionsPage() {
       sellQty,
       avgBuyPrice,
       avgSellPrice,
-      netQty
+      netQty,
+      remainingAvgBuyPrice,
+      currentInvestment
     }
   }
 
@@ -718,6 +768,30 @@ export default function TransactionsPage() {
                 <p className="text-lg font-semibold">{summary.sellQty.toFixed(2)}</p>
               </div>
             </div>
+            
+            {/* Remaining Investment Section */}
+            {summary.netQty > 0 && (
+              <div className="mt-4 p-3 rounded-lg bg-muted/50">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">Remaining Shares</p>
+                    <p className="text-lg font-semibold">{summary.netQty.toFixed(2)}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">Remaining Avg Buy Price</p>
+                    <p className="text-lg font-semibold text-primary">
+                      {summary.remainingAvgBuyPrice > 0 ? formatCurrency(summary.remainingAvgBuyPrice) : '-'}
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">Current Investment</p>
+                    <p className="text-lg font-semibold">
+                      {formatCurrency(summary.currentInvestment)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
