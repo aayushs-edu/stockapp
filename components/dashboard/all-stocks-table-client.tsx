@@ -1,7 +1,7 @@
 // components/dashboard/all-stocks-table-client.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -13,10 +13,17 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { formatCurrency } from '@/lib/utils'
 import { cn } from '@/lib/utils'
-import { ExternalLink, TrendingUp, TrendingDown, Grid3X3, TableIcon } from 'lucide-react'
+import { ExternalLink, TrendingUp, TrendingDown, Grid3X3, TableIcon, ArrowUpDown, User } from 'lucide-react'
 import Link from 'next/link'
 
 interface StockData {
@@ -33,6 +40,7 @@ interface StockData {
   currentValue: number
   totalTransactions: number
   lastTransaction: Date | null
+  lastUser: string | null
   status: 'Active' | 'Closed'
 }
 
@@ -52,6 +60,21 @@ export function AllStocksTableClient({
   closedStocks
 }: AllStocksTableClientProps) {
   const router = useRouter()
+  const [sortBy, setSortBy] = useState<'name' | 'lastActivity'>('name')
+
+  const sortedStocks = useMemo(() => {
+    const sorted = [...stocks]
+    if (sortBy === 'name') {
+      return sorted.sort((a, b) => a.stock.localeCompare(b.stock))
+    } else {
+      return sorted.sort((a, b) => {
+        if (!a.lastTransaction && !b.lastTransaction) return 0
+        if (!a.lastTransaction) return 1
+        if (!b.lastTransaction) return -1
+        return new Date(b.lastTransaction).getTime() - new Date(a.lastTransaction).getTime()
+      })
+    }
+  }, [stocks, sortBy])
 
   const handleStockClick = (stock: string) => {
     router.push(`/summary-book?stock=${encodeURIComponent(stock)}`)
@@ -70,30 +93,74 @@ export function AllStocksTableClient({
         </TabsTrigger>
       </TabsList>
       
-      <TabsContent value="grid" className="mt-4">
-        <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2">
-          {stocks.map((stock) => (
+      <TabsContent value="grid" className="mt-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <Select value={sortBy} onValueChange={(value: 'name' | 'lastActivity') => setSortBy(value)}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="name">
+                <div className="flex items-center gap-2">
+                  <ArrowUpDown className="h-4 w-4" />
+                  Sort by Name
+                </div>
+              </SelectItem>
+              <SelectItem value="lastActivity">
+                <div className="flex items-center gap-2">
+                  <ArrowUpDown className="h-4 w-4" />
+                  Sort by Last Activity
+                </div>
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+          {sortedStocks.map((stock) => (
             <Button
               key={stock.stock}
               variant="outline"
               className={cn(
-                "h-auto py-3 px-4 flex flex-col items-center justify-center gap-1 transition-all relative overflow-hidden",
+                "h-auto py-3 px-4 flex flex-col items-start justify-between gap-2 transition-all relative overflow-hidden",
                 stock.status === 'Active' 
                   ? "hover:bg-green-50 hover:border-green-500 dark:hover:bg-green-950/20" 
                   : "hover:bg-gray-50 hover:border-gray-400 dark:hover:bg-gray-950/20 opacity-75"
               )}
               onClick={() => handleStockClick(stock.stock)}
             >
-              <span className={cn(
-                "font-semibold text-sm",
-                stock.status === 'Closed' && "text-muted-foreground"
-              )}>
-                {stock.stock}
-              </span>
-              <div className={cn(
-                "absolute top-0 right-0 w-2 h-2 rounded-bl-full",
-                stock.status === 'Active' ? "bg-green-500" : "bg-gray-400"
-              )} />
+              <div className="w-full">
+                <div className="flex items-start justify-between w-full">
+                  <span className={cn(
+                    "font-semibold text-sm",
+                    stock.status === 'Closed' && "text-muted-foreground"
+                  )}>
+                    {stock.stock}
+                  </span>
+                  <div className={cn(
+                    "w-2 h-2 rounded-full mt-0.5",
+                    stock.status === 'Active' ? "bg-green-500" : "bg-gray-400"
+                  )} />
+                </div>
+              </div>
+              
+              <div className="w-full space-y-1">
+                {stock.lastUser && (
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <User className="h-3 w-3" />
+                    <span>{stock.lastUser}</span>
+                  </div>
+                )}
+                {stock.lastTransaction && (
+                  <div className="text-xs text-muted-foreground">
+                    {new Date(stock.lastTransaction).toLocaleDateString('en-IN', {
+                      day: '2-digit',
+                      month: 'short',
+                      year: '2-digit'
+                    })}
+                  </div>
+                )}
+              </div>
             </Button>
           ))}
         </div>
@@ -111,7 +178,7 @@ export function AllStocksTableClient({
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[200px]">Stock</TableHead>
-                <TableHead className="text-right">Realized P&L</TableHead>
+                <TableHead className="text-right">P&L / Investment</TableHead>
                 <TableHead className="text-center w-[120px]">Transactions</TableHead>
                 <TableHead className="text-center w-[140px]">Last Activity</TableHead>
                 <TableHead className="w-[50px]"></TableHead>
@@ -138,25 +205,36 @@ export function AllStocksTableClient({
                     </div>
                   </TableCell>
                   <TableCell className="text-right py-2">
-                    {stock.realizedPnL !== 0 ? (
+                    {stock.status === 'Closed' ? (
+                      // Show realized P&L for closed positions
+                      stock.realizedPnL !== 0 ? (
+                        <div className="flex items-center justify-end gap-1">
+                          {stock.realizedPnL > 0 ? (
+                            <TrendingUp className="h-3 w-3 text-green-600" />
+                          ) : (
+                            <TrendingDown className="h-3 w-3 text-red-600" />
+                          )}
+                          <span className={cn(
+                            "font-medium",
+                            stock.realizedPnL >= 0 ? "text-green-600" : "text-red-600"
+                          )}>
+                            {stock.realizedPnL >= 0 ? 'Profit: ' : 'Loss: '}
+                            {formatCurrency(Math.abs(stock.realizedPnL))}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            ({stock.realizedPnLPercent.toFixed(1)}%)
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">Break-even</span>
+                      )
+                    ) : (
+                      // Show investment for active positions
                       <div className="flex items-center justify-end gap-1">
-                        {stock.realizedPnL > 0 ? (
-                          <TrendingUp className="h-3 w-3 text-green-600" />
-                        ) : (
-                          <TrendingDown className="h-3 w-3 text-red-600" />
-                        )}
-                        <span className={cn(
-                          "font-medium",
-                          stock.realizedPnL >= 0 ? "text-green-600" : "text-red-600"
-                        )}>
-                          {formatCurrency(Math.abs(stock.realizedPnL))}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          ({stock.realizedPnLPercent.toFixed(1)}%)
+                        <span className="text-muted-foreground">
+                          Investment: {formatCurrency(stock.currentValue)}
                         </span>
                       </div>
-                    ) : (
-                      <span className="text-muted-foreground">-</span>
                     )}
                   </TableCell>
                   <TableCell className="text-center py-2">
@@ -165,11 +243,23 @@ export function AllStocksTableClient({
                     </Badge>
                   </TableCell>
                   <TableCell className="text-center text-sm text-muted-foreground py-2">
-                    {stock.lastTransaction && new Date(stock.lastTransaction).toLocaleDateString('en-IN', {
-                      day: '2-digit',
-                      month: 'short',
-                      year: '2-digit'
-                    })}
+                    <div className="space-y-0.5">
+                      {stock.lastTransaction && (
+                        <div>
+                          {new Date(stock.lastTransaction).toLocaleDateString('en-IN', {
+                            day: '2-digit',
+                            month: 'short',
+                            year: '2-digit'
+                          })}
+                        </div>
+                      )}
+                      {stock.lastUser && (
+                        <div className="text-xs flex items-center justify-center gap-1">
+                          <User className="h-3 w-3" />
+                          {stock.lastUser}
+                        </div>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()} className="py-2">
                     <Link href={`/summary-book?stock=${encodeURIComponent(stock.stock)}`}>

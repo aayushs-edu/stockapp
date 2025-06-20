@@ -35,7 +35,7 @@ export async function AllStocksTable() {
     }
   })
 
-  // Get last transaction date for each stock
+  // Get last transaction date and user for each stock
   const lastTransactions = await prisma.stock.findMany({
     distinct: ['stock'],
     orderBy: {
@@ -43,11 +43,12 @@ export async function AllStocksTable() {
     },
     select: {
       stock: true,
-      date: true
+      date: true,
+      userid: true
     }
   })
 
-  const lastTransactionMap = new Map(lastTransactions.map(t => [t.stock, t.date]))
+  const lastTransactionMap = new Map(lastTransactions.map(t => [t.stock, { date: t.date, userid: t.userid }]))
   const sellMap = new Map(sellData.map(s => [s.stock, s._sum]))
 
   const stocksSummary = stocksData.map(stock => {
@@ -62,7 +63,8 @@ export async function AllStocksTable() {
     const realizedPnL = sellValue - (avgBuyPrice * sellQty)
     const realizedPnLPercent = sellQty > 0 && avgBuyPrice > 0 ? ((avgSellPrice - avgBuyPrice) / avgBuyPrice) * 100 : 0
     const currentValue = remainingQty * avgBuyPrice
-    const lastTransaction = lastTransactionMap.get(stock.stock) ?? null
+    const lastTransactionData = lastTransactionMap.get(stock.stock)
+    const status: "Active" | "Closed" = remainingQty > 0 ? "Active" : "Closed"
     
     return {
       stock: stock.stock,
@@ -77,8 +79,9 @@ export async function AllStocksTable() {
       realizedPnLPercent,
       currentValue,
       totalTransactions: stock._count._all,
-      lastTransaction,
-      status: remainingQty > 0 ? 'Active' as const : 'Closed' as const
+      lastTransaction: lastTransactionData?.date || null,
+      lastUser: lastTransactionData?.userid || null,
+      status
     }
   }).sort((a, b) => a.stock.localeCompare(b.stock))
 

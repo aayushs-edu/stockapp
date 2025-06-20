@@ -347,7 +347,15 @@ export default function TransactionsPage() {
     const summaryData = table.getFilteredRowModel().rows.map(row => row.original)
     
     if (!Array.isArray(summaryData) || summaryData.length === 0) {
-      return { buyTotal: 0, sellTotal: 0, buyQty: 0, sellQty: 0 }
+      return { 
+        buyTotal: 0, 
+        sellTotal: 0, 
+        buyQty: 0, 
+        sellQty: 0,
+        avgBuyPrice: 0,
+        avgSellPrice: 0,
+        netQty: 0
+      }
     }
 
     const buyTransactions = summaryData.filter((t) => t.action === 'Buy')
@@ -357,8 +365,23 @@ export default function TransactionsPage() {
     const sellTotal = sellTransactions.reduce((sum, t) => sum + t.tradeValue - t.brokerage, 0)
     const buyQty = buyTransactions.reduce((sum, t) => sum + t.quantity, 0)
     const sellQty = sellTransactions.reduce((sum, t) => sum + t.quantity, 0)
+    const netQty = buyQty - sellQty
+    
+    // Calculate weighted average prices
+    const totalBuyValue = buyTransactions.reduce((sum, t) => sum + t.tradeValue, 0)
+    const totalSellValue = sellTransactions.reduce((sum, t) => sum + t.tradeValue, 0)
+    const avgBuyPrice = buyQty > 0 ? totalBuyValue / buyQty : 0
+    const avgSellPrice = sellQty > 0 ? totalSellValue / sellQty : 0
 
-    return { buyTotal, sellTotal, buyQty, sellQty }
+    return { 
+      buyTotal, 
+      sellTotal, 
+      buyQty, 
+      sellQty,
+      avgBuyPrice,
+      avgSellPrice,
+      netQty
+    }
   }
 
   const summary = calculateSummary()
@@ -602,7 +625,11 @@ export default function TransactionsPage() {
             <Select
               value={`${table.getState().pagination.pageSize}`}
               onValueChange={(value) => {
-                table.setPageSize(Number(value))
+                if (value === 'all') {
+                  table.setPageSize(Number.MAX_SAFE_INTEGER)
+                } else {
+                  table.setPageSize(Number(value))
+                }
               }}
             >
               <SelectTrigger className="h-8 w-[70px]">
@@ -614,6 +641,9 @@ export default function TransactionsPage() {
                     {pageSize}
                   </SelectItem>
                 ))}
+                <SelectItem value="all">
+                  All
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -660,7 +690,33 @@ export default function TransactionsPage() {
             </div>
             <div className="space-y-1">
               <p className="text-sm text-muted-foreground">Shares Held</p>
-              <p className="text-xl font-bold">{Math.trunc((summary.buyQty - summary.sellQty) * 100) / 100}</p>
+              <p className="text-xl font-bold">{summary.netQty.toFixed(2)}</p>
+            </div>
+          </div>
+          
+          {/* Average Prices Section */}
+          <div className="mt-4 pt-4 border-t">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">Avg Buy Price</p>
+                <p className="text-lg font-semibold">
+                  {summary.avgBuyPrice > 0 ? formatCurrency(summary.avgBuyPrice) : '-'}
+                </p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">Avg Sell Price</p>
+                <p className="text-lg font-semibold">
+                  {summary.avgSellPrice > 0 ? formatCurrency(summary.avgSellPrice) : '-'}
+                </p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">Buy Quantity</p>
+                <p className="text-lg font-semibold">{summary.buyQty.toFixed(2)}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">Sell Quantity</p>
+                <p className="text-lg font-semibold">{summary.sellQty.toFixed(2)}</p>
+              </div>
             </div>
           </div>
         </CardContent>

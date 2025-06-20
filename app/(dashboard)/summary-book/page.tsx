@@ -16,18 +16,18 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-} from '@/components/ui/command'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatCurrency } from '@/lib/utils'
@@ -85,7 +85,7 @@ export default function SummaryBookPage() {
   
   const [data, setData] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
-  const [globalFilter, setGlobalFilter] = useState('')
+  const [accountFilter, setAccountFilter] = useState<string>('all')
   const [stockFilter, setStockFilter] = useState<string>(stockFromUrl || '')
   const [stockSearchOpen, setStockSearchOpen] = useState(false)
   const [stockSearchValue, setStockSearchValue] = useState('')
@@ -98,6 +98,17 @@ export default function SummaryBookPage() {
   const uniqueStocks = useMemo(() => {
     const stocks = new Set(data.map(t => t.stock))
     return Array.from(stocks).sort()
+  }, [data])
+
+  // Get unique accounts for dropdown
+  const uniqueAccounts = useMemo(() => {
+    const accountsMap = new Map<string, string>()
+    data.forEach(t => {
+      if (!accountsMap.has(t.userid)) {
+        accountsMap.set(t.userid, t.account?.name || t.userid)
+      }
+    })
+    return Array.from(accountsMap.entries()).sort((a, b) => a[0].localeCompare(b[0]))
   }, [data])
 
   useEffect(() => {
@@ -224,26 +235,50 @@ export default function SummaryBookPage() {
     })
 
     // Convert to array and sort
-    const summaries = Array.from(summaryMap.values())
+    let summaries = Array.from(summaryMap.values())
     
-    // Filter based on global filter and stock filter
-    if (globalFilter || stockFilter) {
-      return summaries.filter(stock => {
-        const matchesGlobal = !globalFilter || 
-          stock.stock.toLowerCase().includes(globalFilter.toLowerCase()) ||
-          stock.accounts.some(account => 
-            account.userid.toLowerCase().includes(globalFilter.toLowerCase()) ||
-            account.name.toLowerCase().includes(globalFilter.toLowerCase())
-          )
+    // Filter based on account filter and stock filter
+    let filteredSummaries = summaries
+    
+    // If a specific account is selected, only show stocks that account has traded
+    if (accountFilter && accountFilter !== 'all') {
+      filteredSummaries = summaries.filter(stock => 
+        stock.accounts.some(account => account.userid === accountFilter)
+      ).map(stock => ({
+        ...stock,
+        // Filter accounts to only show the selected account
+        accounts: stock.accounts.filter(account => account.userid === accountFilter)
+      }))
+      
+      // Recalculate stock-level summaries for the filtered account
+      filteredSummaries = filteredSummaries.map(stock => {
+        const totalBuyQty = stock.accounts.reduce((sum, acc) => sum + acc.buyQty, 0)
+        const totalSellQty = stock.accounts.reduce((sum, acc) => sum + acc.sellQty, 0)
+        const totalBuyValue = stock.accounts.reduce((sum, acc) => sum + acc.totalBuyValue, 0)
+        const totalSellValue = stock.accounts.reduce((sum, acc) => sum + acc.totalSellValue, 0)
+        const totalBrokerage = stock.accounts.reduce((sum, acc) => sum + acc.totalBrokerage, 0)
         
-        const matchesStock = !stockFilter || stock.stock === stockFilter
-        
-        return matchesGlobal && matchesStock
+        return {
+          ...stock,
+          totalBuyQty,
+          totalSellQty,
+          totalNetQty: totalBuyQty - totalSellQty,
+          totalBuyValue,
+          totalSellValue,
+          totalBrokerage,
+          avgBuyPrice: totalBuyQty > 0 ? totalBuyValue / totalBuyQty : 0,
+          avgSellPrice: totalSellQty > 0 ? totalSellValue / totalSellQty : 0
+        }
       })
     }
     
-    return summaries.sort((a, b) => a.stock.localeCompare(b.stock))
-  }, [data, globalFilter, stockFilter, dateFrom, dateTo])
+    // Apply stock filter if set
+    if (stockFilter) {
+      filteredSummaries = filteredSummaries.filter(stock => stock.stock === stockFilter)
+    }
+    
+    return filteredSummaries.sort((a, b) => a.stock.localeCompare(b.stock))
+  }, [data, accountFilter, stockFilter, dateFrom, dateTo])
 
   const toggleStockExpansion = (stock: string) => {
     const newExpanded = new Set(expandedStocks)
@@ -410,11 +445,20 @@ export default function SummaryBookPage() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Input
-              placeholder="Search by account..."
-              value={globalFilter}
-              onChange={(e) => setGlobalFilter(e.target.value)}
-            />
+            {/* Account Dropdown */}
+            <Select value={accountFilter} onValueChange={setAccountFilter}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select Account" />
+              </SelectTrigger>
+              <SelectContent className="max-h-60 overflow-y-auto">
+                <SelectItem value="all">All Accounts</SelectItem>
+                {uniqueAccounts.map(([userid, name]) => (
+                  <SelectItem key={userid} value={userid}>
+                    {userid} - {name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             
             {/* Stock Autocomplete */}
             <Popover open={stockSearchOpen} onOpenChange={setStockSearchOpen}>
@@ -529,13 +573,13 @@ export default function SummaryBookPage() {
           </div>
           
           {/* Clear Filters Button */}
-          {(globalFilter || stockFilter || dateFrom || dateTo) && (
+          {((accountFilter && accountFilter !== 'all') || stockFilter || dateFrom || dateTo) && (
             <div className="mt-4">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  setGlobalFilter('')
+                  setAccountFilter('all')
                   setStockFilter('')
                   setDateFrom(undefined)
                   setDateTo(undefined)

@@ -2,10 +2,10 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { prisma } from '@/lib/db'
 import { cn, formatCurrency } from '@/lib/utils'
-import { TrendingUp, TrendingDown, DollarSign, Activity, ArrowUpRight, ArrowDownRight } from 'lucide-react'
+import { TrendingUp, TrendingDown, DollarSign, Activity, ArrowUpRight, ArrowDownRight, Wallet } from 'lucide-react'
 
 export async function DashboardStats() {
-  const [totalBuy, totalSell, totalAccounts, recentTransactions, totalStocks] = await Promise.all([
+  const [totalBuy, totalSell, totalAccounts, recentTransactions, stockPositions] = await Promise.all([
     prisma.stock.aggregate({
       where: { action: 'Buy' },
       _sum: { tradeValue: true, brokerage: true }
@@ -22,52 +22,95 @@ export async function DashboardStats() {
         }
       }
     }),
+    // Get position status for each stock
     prisma.stock.groupBy({
       by: ['stock'],
-      _count: true
+      _sum: {
+        quantity: true,
+        tradeValue: true,
+        brokerage: true
+      },
+      where: { action: 'Buy' }
     })
   ])
 
+  // Get sell data for position calculation
+  const sellData = await prisma.stock.groupBy({
+    by: ['stock'],
+    _sum: {
+      quantity: true,
+      tradeValue: true,
+      brokerage: true
+    },
+    where: { action: 'Sell' }
+  })
+
+  const sellMap = new Map(sellData.map(s => [s.stock, s._sum]))
+  
+  // Calculate realized P&L and current investment
+  let realizedPnL = 0
+  let currentInvestment = 0
+  let totalStocks = 0
+  
+  stockPositions.forEach(buyPosition => {
+    const soldPosition = sellMap.get(buyPosition.stock)
+    const buyQty = buyPosition._sum.quantity || 0
+    const sellQty = soldPosition?.quantity || 0
+    const remainingQty = buyQty - sellQty
+    
+    if (remainingQty <= 0) {
+      // Position is closed - calculate realized P&L
+      const buyValue = (buyPosition._sum.tradeValue || 0) + (buyPosition._sum.brokerage || 0)
+      const sellValue = (soldPosition?.tradeValue || 0) - (soldPosition?.brokerage || 0)
+      const avgBuyPrice = buyQty > 0 ? (buyPosition._sum.tradeValue || 0) / buyQty : 0
+      realizedPnL += sellValue - (avgBuyPrice * sellQty)
+    } else {
+      // Position is active - count as investment
+      const avgPrice = buyQty > 0 ? (buyPosition._sum.tradeValue || 0) / buyQty : 0
+      currentInvestment += remainingQty * avgPrice
+    }
+    totalStocks++
+  })
+
   const buyTotal = (totalBuy._sum.tradeValue || 0) + (totalBuy._sum.brokerage || 0)
   const sellTotal = (totalSell._sum.tradeValue || 0) - (totalSell._sum.brokerage || 0)
-  const netProfit = sellTotal - buyTotal
-  const profitPercentage = buyTotal > 0 ? ((netProfit / buyTotal) * 100).toFixed(2) : '0'
+  const netCashFlow = sellTotal - buyTotal
 
   const stats = [
     {
-      title: 'Total Investment',
-      value: formatCurrency(buyTotal),
-      icon: DollarSign,
-      description: 'Capital deployed',
+      title: 'Current Investment',
+      value: formatCurrency(currentInvestment),
+      icon: Wallet,
+      description: 'Active positions value',
       trend: 'neutral',
       gradient: 'from-amber-500 to-amber-600',
       bgGradient: 'from-amber-50 to-amber-100 dark:from-amber-950/20 dark:to-amber-900/20'
     },
     {
-      title: 'Total Returns',
-      value: formatCurrency(sellTotal),
-      icon: TrendingUp,
-      description: 'Realized gains',
-      trend: 'up',
-      gradient: 'from-emerald-500 to-emerald-600',
-      bgGradient: 'from-emerald-50 to-emerald-100 dark:from-emerald-950/20 dark:to-emerald-900/20'
+      title: 'Total Deployed',
+      value: formatCurrency(buyTotal),
+      icon: DollarSign,
+      description: 'Total capital invested',
+      trend: 'neutral',
+      gradient: 'from-blue-500 to-blue-600',
+      bgGradient: 'from-blue-50 to-blue-100 dark:from-blue-950/20 dark:to-blue-900/20'
     },
     {
-      title: 'Net Profit/Loss',
-      value: formatCurrency(netProfit),
-      icon: netProfit >= 0 ? ArrowUpRight : ArrowDownRight,
-      description: `${profitPercentage}% ${netProfit >= 0 ? 'gain' : 'loss'}`,
-      trend: netProfit >= 0 ? 'up' : 'down',
-      gradient: netProfit >= 0 ? 'from-blue-500 to-blue-600' : 'from-red-500 to-red-600',
-      bgGradient: netProfit >= 0 
-        ? 'from-blue-50 to-blue-100 dark:from-blue-950/20 dark:to-blue-900/20' 
+      title: 'Realized P&L',
+      value: formatCurrency(Math.abs(realizedPnL)),
+      icon: realizedPnL >= 0 ? TrendingUp : TrendingDown,
+      description: `${realizedPnL >= 0 ? 'Profit' : 'Loss'} from closed positions`,
+      trend: realizedPnL >= 0 ? 'up' : 'down',
+      gradient: realizedPnL >= 0 ? 'from-emerald-500 to-emerald-600' : 'from-red-500 to-red-600',
+      bgGradient: realizedPnL >= 0 
+        ? 'from-emerald-50 to-emerald-100 dark:from-emerald-950/20 dark:to-emerald-900/20' 
         : 'from-red-50 to-red-100 dark:from-red-950/20 dark:to-red-900/20'
     },
     {
       title: 'Trading Activity',
       value: recentTransactions.toString(),
       icon: Activity,
-      description: `${totalStocks.length} unique stocks`,
+      description: `${totalStocks} unique stocks`,
       trend: 'neutral',
       gradient: 'from-purple-500 to-purple-600',
       bgGradient: 'from-purple-50 to-purple-100 dark:from-purple-950/20 dark:to-purple-900/20'
