@@ -7,12 +7,10 @@ import { HoldingsDistributionChart } from '@/components/charts/holdings-distribu
 import { PerformanceComparisonChart } from '@/components/charts/performance-comparison-chart'
 import { TradingActivityHeatmap } from '@/components/charts/trading-activity-heatmap'
 import { Loader2 } from 'lucide-react'
-import { useLanguage } from '@/contexts/language-context'
 
 export function DashboardCharts() {
   const [analyticsData, setAnalyticsData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  const { t } = useLanguage()
 
   useEffect(() => {
     fetchAnalytics()

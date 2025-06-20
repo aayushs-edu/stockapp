@@ -4,7 +4,6 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { useLanguage } from '@/contexts/language-context'
 import {
   BarChart3,
   FileText,
@@ -17,54 +16,59 @@ import {
   PieChart
 } from 'lucide-react'
 
+const routes = [
+  {
+    href: '/',
+    label: 'Dashboard',
+    icon: Home,
+    description: 'Overview & analytics'
+  },
+  {
+    href: '/transactions',
+    label: 'Trade Book',
+    icon: FileText,
+    description: 'View all trades'
+  },
+  {
+    href: '/summary-book',
+    label: 'Summary Book',
+    icon: FileText,
+    description: 'Consolidated view'
+  },
+  {
+    href: '/add-stock',
+    label: 'Add Stock',
+    icon: PlusCircle,
+    description: 'New transaction'
+  },
+  {
+    href: '/modify',
+    label: 'Modify Records',
+    icon: Edit,
+    description: 'Edit records'
+  },
+  {
+    href: '/accounts',
+    label: 'Accounts',
+    icon: Users,
+    description: 'Manage accounts'
+  },
+  {
+    href: '/profit-loss',
+    label: 'P&L Analysis',
+    icon: TrendingUp,
+    description: 'Profit & loss'
+  },
+  {
+    href: '/summary',
+    label: 'Summary',
+    icon: PieChart,
+    description: 'Portfolio overview'
+  }
+]
+
 export function MainNav() {
   const pathname = usePathname()
-  const { t } = useLanguage()
-
-  const routes = [
-    {
-      href: '/',
-      label: t.nav.dashboard,
-      icon: Home,
-      description: t.nav.dashboardDesc
-    },
-    {
-      href: '/transactions',
-      label: t.nav.tradeBook,
-      icon: FileText,
-      description: t.nav.tradeBookDesc
-    },
-    {
-      href: '/add-stock',
-      label: t.nav.addStock,
-      icon: PlusCircle,
-      description: t.nav.addStockDesc
-    },
-    {
-      href: '/modify',
-      label: t.nav.modify,
-      icon: Edit,
-      description: t.nav.modifyDesc
-    },
-    {
-      href: '/accounts',
-      label: t.nav.accounts,
-      icon: Users,
-      description: t.nav.accountsDesc
-    },
-    {
-      href: '/profit-loss',
-      label: t.nav.pnlAnalysis,
-      icon: TrendingUp,
-      description: t.nav.pnlDesc
-    },
-    {
-      href: '/summary',
-      label: t.nav.summary,
-      icon: PieChart,
-      description: t.nav.summaryDesc
-    }
-  ]
 
   return (
     <nav className="flex items-center space-x-6">

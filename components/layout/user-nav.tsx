@@ -12,15 +12,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { User, LogOut } from 'lucide-react'
-import { useLanguage } from '@/contexts/language-context'
 
 export function UserNav() {
-  const { t } = useLanguage()
-
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="relative h-8 w-8 rounded-full bg-gray-200 text-gray-700 hover:bg-gray-300">
+        <Button variant="ghost" className="relative h-8 w-8 rounded-full">
           <User className="h-5 w-5" />
         </Button>
       </DropdownMenuTrigger>
@@ -36,7 +33,7 @@ export function UserNav() {
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => signOut()}>
           <LogOut className="mr-2 h-4 w-4" />
-          <span>{t.nav.logout}</span>
+          <span>Log out</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
