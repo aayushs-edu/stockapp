@@ -115,13 +115,13 @@ export function AllStocksTableClient({
             </SelectContent>
           </Select>
         </div>
-        <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2">
+        <div className="grid grid-cols-5 md:grid-cols-8 lg:grid-cols-10 xl:grid-cols-15 gap-0.5">
           {sortedStocks.map((stock) => (
             <Button
               key={stock.stock}
               variant="outline"
               className={cn(
-                "h-auto py-3 px-4 flex items-center justify-center transition-all relative overflow-hidden font-semibold text-sm",
+                "h-6 px-1 py-0.5 flex items-center justify-center transition-all relative overflow-hidden font-normal text-[10px] leading-tight min-w-0",
                 stock.status === 'Closed' && "bg-gray-100 text-gray-400 border-gray-300 opacity-70 hover:bg-gray-100 hover:border-gray-300 hover:text-gray-400",
                 stock.status === 'Active' 
                   ? "hover:bg-green-50 hover:border-green-500 dark:hover:bg-green-950/20" 
@@ -129,12 +129,9 @@ export function AllStocksTableClient({
                 "hover:text-inherit focus:text-inherit active:text-inherit"
               )}
               onClick={() => handleStockClick(stock.stock)}
+              title={stock.stock} // Tooltip for full text
             >
-              <span className="flex items-center gap-2">
-                <span className={cn(
-                  "w-2 h-2 rounded-full",
-                  stock.status === 'Active' ? "bg-green-500" : "bg-gray-400"
-                )} />
+              <span className="truncate w-full text-center">
                 {stock.stock}
               </span>
             </Button>
@@ -152,76 +149,75 @@ export function AllStocksTableClient({
         <div className="rounded-md border">
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead className="w-[200px]">Stock</TableHead>
-                <TableHead className="text-right">P&L / Investment</TableHead>
-                <TableHead className="text-center w-[120px]">Transactions</TableHead>
-                <TableHead className="text-center w-[140px]">Last Activity</TableHead>
-                <TableHead className="w-[50px]"></TableHead>
+              <TableRow className="h-6">
+                <TableHead className="w-[200px] py-0.5 text-xs">Stock</TableHead>
+                <TableHead className="text-right py-0.5 text-xs">P&L / Investment</TableHead>
+                <TableHead className="text-center w-[100px] py-0.5 text-xs">Trades</TableHead>
+                <TableHead className="text-center w-[120px] py-0.5 text-xs">Last Activity</TableHead>
+                <TableHead className="w-[40px] py-0.5"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {stocks.map((stock) => (
                 <TableRow 
                   key={stock.stock}
-                  className="hover:bg-muted/50 cursor-pointer h-12"
+                  className="hover:bg-muted/50 cursor-pointer h-6"
                   onClick={() => handleStockClick(stock.stock)}
                 >
-                  <TableCell className="font-medium py-2">
-                    <div className="flex items-center gap-2">
+                  <TableCell className="font-medium py-0.5 text-xs">
+                    <div className="flex items-center gap-1">
                       <span className="hover:text-primary transition-colors">
                         {stock.stock}
                       </span>
                       <Badge 
                         variant={stock.status === 'Active' ? 'default' : 'secondary'}
-                        className="text-xs h-5"
+                        className="text-[8px] h-3 px-1"
                       >
                         {stock.status}
                       </Badge>
                     </div>
                   </TableCell>
-                  <TableCell className="text-right py-2">
+                  <TableCell className="text-right py-0.5">
                     {stock.status === 'Closed' ? (
                       // Show realized P&L for closed positions
                       stock.realizedPnL !== 0 ? (
-                        <div className="flex items-center justify-end gap-1">
+                        <div className="flex items-center justify-end gap-0.5">
                           {stock.realizedPnL > 0 ? (
-                            <TrendingUp className="h-3 w-3 text-green-600" />
+                            <TrendingUp className="h-2.5 w-2.5 text-green-600" />
                           ) : (
-                            <TrendingDown className="h-3 w-3 text-red-600" />
+                            <TrendingDown className="h-2.5 w-2.5 text-red-600" />
                           )}
                           <span className={cn(
-                            "font-medium",
+                            "font-medium text-[10px]",
                             stock.realizedPnL >= 0 ? "text-green-600" : "text-red-600"
                           )}>
-                            {stock.realizedPnL >= 0 ? 'Profit: ' : 'Loss: '}
                             {formatCurrency(Math.abs(stock.realizedPnL))}
                           </span>
-                          <span className="text-xs text-muted-foreground">
+                          <span className="text-[8px] text-muted-foreground">
                             ({stock.realizedPnLPercent.toFixed(1)}%)
                           </span>
                         </div>
                       ) : (
-                        <span className="text-muted-foreground">Break-even</span>
+                        <span className="text-muted-foreground text-[10px]">Break-even</span>
                       )
                     ) : (
                       // Show investment for active positions
-                      <div className="flex items-center justify-end gap-1">
-                        <span className="text-muted-foreground">
-                          Investment: {formatCurrency(stock.currentValue)}
+                      <div className="flex items-center justify-end">
+                        <span className="text-muted-foreground text-[10px]">
+                          {formatCurrency(stock.currentValue)}
                         </span>
                       </div>
                     )}
                   </TableCell>
-                  <TableCell className="text-center py-2">
-                    <Badge variant="outline" className="text-xs">
+                  <TableCell className="text-center py-0.5">
+                    <Badge variant="outline" className="text-[8px] h-3 px-1">
                       {stock.totalTransactions}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-center text-sm text-muted-foreground py-2">
-                    <div className="space-y-0.5">
+                  <TableCell className="text-center text-muted-foreground py-0.5">
+                    <div className="space-y-0">
                       {stock.lastTransaction && (
-                        <div>
+                        <div className="text-[9px]">
                           {new Date(stock.lastTransaction).toLocaleDateString('en-IN', {
                             day: '2-digit',
                             month: 'short',
@@ -230,17 +226,17 @@ export function AllStocksTableClient({
                         </div>
                       )}
                       {stock.lastUser && (
-                        <div className="text-xs flex items-center justify-center gap-1">
-                          <User className="h-3 w-3" />
+                        <div className="text-[8px] flex items-center justify-center gap-0.5">
+                          <User className="h-1.5 w-1.5" />
                           {stock.lastUser}
                         </div>
                       )}
                     </div>
                   </TableCell>
-                  <TableCell onClick={(e) => e.stopPropagation()} className="py-2">
+                  <TableCell onClick={(e) => e.stopPropagation()} className="py-0.5">
                     <Link href={`/summary-book?stock=${encodeURIComponent(stock.stock)}`}>
-                      <Button size="sm" variant="ghost" className="h-8 w-8 p-0">
-                        <ExternalLink className="h-4 w-4" />
+                      <Button size="sm" variant="ghost" className="h-4 w-4 p-0">
+                        <ExternalLink className="h-2.5 w-2.5" />
                         <span className="sr-only">View details</span>
                       </Button>
                     </Link>

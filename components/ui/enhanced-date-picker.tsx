@@ -215,6 +215,7 @@ export function EnhancedDatePicker({
             disabled={disabled}
             className="pr-10"
             autoComplete="off"
+            title="DD/MM/YYYY, DD-MM-YYYY, or YYYY-MM-DD"
           />
           <PopoverTrigger asChild>
             <Button
@@ -348,11 +349,6 @@ export function EnhancedDatePicker({
           </div>
         </PopoverContent>
       </Popover>
-      
-      {/* Helper text */}
-      <div className="text-xs text-muted-foreground mt-1">
-        Format: DD/MM/YYYY, DD-MM-YYYY, or YYYY-MM-DD
-      </div>
     </div>
   )
 }
