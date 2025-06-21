@@ -86,6 +86,31 @@ interface Account {
   active: boolean
 }
 
+// Helper component for P/L/I display
+const PLIDisplay = ({ value, type }: { value: number, type: 'profit' | 'loss' | 'investment' }) => {
+  const getColorClass = () => {
+    switch (type) {
+      case 'profit': return 'text-emerald-600 dark:text-emerald-400'
+      case 'loss': return 'text-red-600 dark:text-red-400'
+      case 'investment': return 'text-amber-600 dark:text-amber-400'
+    }
+  }
+
+  const getPrefix = () => {
+    switch (type) {
+      case 'profit': return '+'
+      case 'loss': return '-'
+      case 'investment': return ''
+    }
+  }
+
+  return (
+    <span className={getColorClass()}>
+      {getPrefix()}{formatCurrency(Math.abs(value))}
+    </span>
+  )
+}
+
 export default function SummaryBookPage() {
   const searchParams = useSearchParams()
   const stockFromUrl = searchParams.get('stock')
@@ -95,6 +120,7 @@ export default function SummaryBookPage() {
   const [loading, setLoading] = useState(false) // Changed from true
   const [accountFilter, setAccountFilter] = useState<string>('') // Changed from 'all'
   const [stockFilter, setStockFilter] = useState<string>(stockFromUrl || '')
+  const [holdingFilter, setHoldingFilter] = useState<string>('all') // New filter for holdings
   const [stockSearchOpen, setStockSearchOpen] = useState(false)
   const [stockSearchValue, setStockSearchValue] = useState('')
   const [dateFrom, setDateFrom] = useState<Date>()
@@ -341,8 +367,16 @@ export default function SummaryBookPage() {
       filteredSummaries = filteredSummaries.filter(stock => stock.stock === stockFilter)
     }
     
+    // Apply holding filter
+    if (holdingFilter === 'holding') {
+      filteredSummaries = filteredSummaries.filter(stock => stock.totalNetQty > 0)
+    } else if (holdingFilter === 'closed') {
+      filteredSummaries = filteredSummaries.filter(stock => stock.totalNetQty <= 0)
+    }
+    // 'all' shows everything, so no additional filtering needed
+    
     return filteredSummaries.sort((a, b) => a.stock.localeCompare(b.stock))
-  }, [data, accountFilter, stockFilter, dateFrom, dateTo])
+  }, [data, accountFilter, stockFilter, holdingFilter, dateFrom, dateTo])
 
   const toggleStockExpansion = (stock: string) => {
     const newExpanded = new Set(expandedStocks)
@@ -416,19 +450,32 @@ export default function SummaryBookPage() {
     let totalBrokerage = 0
     let uniqueStocks = stockSummaries.length
     let activePositions = 0
+    let currentInvestment = 0
+    let realizedPnL = 0
 
     stockSummaries.forEach(stock => {
       totalBuyValue += stock.totalBuyValue
       totalSellValue += stock.totalSellValue
       totalBrokerage += stock.totalBrokerage
-      if (stock.totalNetQty > 0) activePositions++
+      
+      if (stock.totalNetQty > 0) {
+        activePositions++
+        // Investment = remaining shares * avg buy price
+        currentInvestment += stock.totalNetQty * stock.avgBuyPrice
+      }
+      
+      if (stock.totalSellQty > 0) {
+        // Realized P/L = sell value - (avg buy price * sold quantity)
+        realizedPnL += stock.totalSellValue - (stock.avgBuyPrice * stock.totalSellQty)
+      }
     })
 
     return {
       totalBuyValue,
       totalSellValue,
       totalBrokerage,
-      netPnL: totalSellValue - totalBuyValue,
+      currentInvestment,
+      realizedPnL,
       uniqueStocks,
       activePositions
     }
@@ -487,14 +534,24 @@ export default function SummaryBookPage() {
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Net P/L</CardTitle>
+              <CardTitle className="text-sm">Current Investment</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className={cn(
-                "text-xl font-bold",
-                summary.netPnL >= 0 ? "text-green-600" : "text-red-600"
-              )}>
-                {formatCurrency(summary.netPnL)}
+              <div className="text-xl font-bold text-amber-600">
+                {formatCurrency(summary.currentInvestment)}
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Realized P/L</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-xl font-bold">
+                <PLIDisplay 
+                  value={summary.realizedPnL} 
+                  type={summary.realizedPnL >= 0 ? 'profit' : 'loss'} 
+                />
               </div>
             </CardContent>
           </Card>
@@ -504,14 +561,6 @@ export default function SummaryBookPage() {
             </CardHeader>
             <CardContent>
               <div className="text-xl font-bold">{formatCurrency(summary.totalBrokerage)}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Unique Stocks</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-xl font-bold">{summary.uniqueStocks}</div>
             </CardContent>
           </Card>
           <Card>
@@ -531,7 +580,7 @@ export default function SummaryBookPage() {
           <CardTitle>Filter</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             {/* Account Dropdown - Only show active accounts */}
             <Select value={accountFilter} onValueChange={setAccountFilter}>
               <SelectTrigger>
@@ -609,8 +658,20 @@ export default function SummaryBookPage() {
               </PopoverContent>
             </Popover>
 
+            {/* Holding Status Filter */}
+            <Select value={holdingFilter} onValueChange={setHoldingFilter}>
+              <SelectTrigger>
+                <SelectValue placeholder="Position Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Positions</SelectItem>
+                <SelectItem value="holding">Holding Only</SelectItem>
+                <SelectItem value="closed">Closed Only</SelectItem>
+              </SelectContent>
+            </Select>
+
             {/* Date Range Filter with Enhanced Date Picker */}
-            <div className="flex gap-2">
+            <div className="flex gap-2 md:col-span-2">
               <EnhancedDatePicker
                 value={dateFrom}
                 onChange={setDateFrom}
@@ -628,7 +689,7 @@ export default function SummaryBookPage() {
           </div>
           
           {/* Clear Filters Button */}
-          {(accountFilter || stockFilter || dateFrom || dateTo) && (
+          {(accountFilter || stockFilter || holdingFilter !== 'all' || dateFrom || dateTo) && (
             <div className="mt-4">
               <Button
                 variant="outline"
@@ -636,6 +697,7 @@ export default function SummaryBookPage() {
                 onClick={() => {
                   setAccountFilter('')
                   setStockFilter('')
+                  setHoldingFilter('all')
                   setDateFrom(undefined)
                   setDateTo(undefined)
                 }}
@@ -882,12 +944,3 @@ export default function SummaryBookPage() {
                       })}
                     </>
                   ))
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
-    </div>
-  )
-}

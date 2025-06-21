@@ -59,7 +59,8 @@ interface AccountStats {
   sellTransactions: number
   totalInvestment: number
   totalReturns: number
-  netPnL: number
+  realizedPnL: number
+  currentInvestment: number
   activeStocks: number
   totalStocks: number
 }
@@ -70,6 +71,31 @@ interface Account {
   name: string
   active: boolean
   stats?: AccountStats
+}
+
+// Helper component for P/L/I display
+const PLIDisplay = ({ value, type }: { value: number, type: 'profit' | 'loss' | 'investment' }) => {
+  const getColorClass = () => {
+    switch (type) {
+      case 'profit': return 'text-emerald-600 dark:text-emerald-400'
+      case 'loss': return 'text-red-600 dark:text-red-400'
+      case 'investment': return 'text-amber-600 dark:text-amber-400'
+    }
+  }
+
+  const getPrefix = () => {
+    switch (type) {
+      case 'profit': return '+'
+      case 'loss': return '-'
+      case 'investment': return ''
+    }
+  }
+
+  return (
+    <span className={getColorClass()}>
+      {getPrefix()}{formatCurrency(Math.abs(value))}
+    </span>
+  )
 }
 
 export default function AccountsPage() {
@@ -232,11 +258,18 @@ export default function AccountsPage() {
     if (account.stats) {
       acc.totalInvestment += account.stats.totalInvestment
       acc.totalReturns += account.stats.totalReturns
-      acc.netPnL += account.stats.netPnL
+      acc.realizedPnL += account.stats.realizedPnL
+      acc.currentInvestment += account.stats.currentInvestment
       acc.totalTransactions += account.stats.totalTransactions
     }
     return acc
-  }, { totalInvestment: 0, totalReturns: 0, netPnL: 0, totalTransactions: 0 })
+  }, { 
+    totalInvestment: 0, 
+    totalReturns: 0, 
+    realizedPnL: 0, 
+    currentInvestment: 0,
+    totalTransactions: 0 
+  })
 
   const activeAccountsCount = accounts.filter(a => a.active).length
   const inactiveAccountsCount = accounts.filter(a => !a.active).length
@@ -384,35 +417,37 @@ export default function AccountsPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Investment</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Current Investment</CardTitle>
+            <DollarSign className="h-4 w-4 text-amber-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(summaryStats.totalInvestment)}</div>
+            <div className="text-2xl font-bold text-amber-600">
+              {formatCurrency(summaryStats.currentInvestment)}
+            </div>
             <p className="text-xs text-muted-foreground">
-              Across all accounts
+              Active positions
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Net P/L</CardTitle>
-            {summaryStats.netPnL >= 0 ? (
-              <TrendingUp className="h-4 w-4 text-green-600" />
+            <CardTitle className="text-sm font-medium">Realized P/L</CardTitle>
+            {summaryStats.realizedPnL >= 0 ? (
+              <TrendingUp className="h-4 w-4 text-emerald-600" />
             ) : (
               <TrendingDown className="h-4 w-4 text-red-600" />
             )}
           </CardHeader>
           <CardContent>
-            <div className={cn(
-              "text-2xl font-bold",
-              summaryStats.netPnL >= 0 ? "text-green-600" : "text-red-600"
-            )}>
-              {formatCurrency(Math.abs(summaryStats.netPnL))}
+            <div className="text-2xl font-bold">
+              <PLIDisplay 
+                value={summaryStats.realizedPnL} 
+                type={summaryStats.realizedPnL >= 0 ? 'profit' : 'loss'} 
+              />
             </div>
             <p className="text-xs text-muted-foreground">
-              Combined profit/loss
+              From closed positions
             </p>
           </CardContent>
         </Card>
@@ -446,7 +481,7 @@ export default function AccountsPage() {
                 <TableHead className="text-center">Active Stocks</TableHead>
                 <TableHead className="text-right">Investment</TableHead>
                 <TableHead className="text-right">Returns</TableHead>
-                <TableHead className="text-right">Net P/L</TableHead>
+                <TableHead className="text-right">P/L/I</TableHead>
                 <TableHead className="text-center">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -464,96 +499,127 @@ export default function AccountsPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                accounts.map((account) => (
-                  <TableRow key={account.id} className={cn(
-                    "h-8",
-                    !account.active && "opacity-60 bg-muted/20"
-                  )}>
-                    <TableCell className="font-medium py-1">
-                      {account.userid}
-                    </TableCell>
-                    <TableCell className="py-1">{account.name}</TableCell>
-                    <TableCell className="text-center py-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => toggleAccountStatus(account)}
-                        disabled={toggleLoading === account.id}
-                        className="h-8 w-8 p-0"
-                      >
-                        {toggleLoading === account.id ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : account.active ? (
-                          <ToggleRight className="h-5 w-5 text-green-600" />
-                        ) : (
-                          <ToggleLeft className="h-5 w-5 text-gray-400" />
-                        )}
-                      </Button>
-                    </TableCell>
-                    <TableCell className="text-center py-1">
-                      <div className="flex flex-col items-center gap-1">
-                        <span className="font-medium">{account.stats?.totalTransactions || 0}</span>
-                        {account.stats && account.stats.totalTransactions > 0 && (
-                          <div className="flex gap-1 text-xs text-muted-foreground">
-                            <span className="text-green-600">{account.stats.buyTransactions} buy</span>
-                            <span>•</span>
-                            <span className="text-red-600">{account.stats.sellTransactions} sell</span>
-                          </div>
-                        )}
+                accounts.map((account) => {
+                  // Determine what to show in P/L/I column
+                  const hasCurrentInvestment = (account.stats?.currentInvestment || 0) > 0
+                  const hasRealizedPnL = (account.stats?.realizedPnL || 0) !== 0
+                  
+                  let pliDisplay = null
+                  if (hasCurrentInvestment && hasRealizedPnL) {
+                    // Show both investment and P/L
+                    pliDisplay = (
+                      <div className="flex flex-col items-end text-xs">
+                        <PLIDisplay 
+                          value={account.stats?.currentInvestment || 0} 
+                          type="investment" 
+                        />
+                        <PLIDisplay 
+                          value={account.stats?.realizedPnL || 0} 
+                          type={(account.stats?.realizedPnL || 0) >= 0 ? 'profit' : 'loss'} 
+                        />
                       </div>
-                    </TableCell>
-                    <TableCell className="text-center py-1">
-                      <div className="flex flex-col items-center gap-1">
-                        <span className="font-medium">{account.stats?.activeStocks || 0}</span>
-                        <span className="text-xs text-muted-foreground">
-                          of {account.stats?.totalStocks || 0} total
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right font-medium py-1">
-                      {formatCurrency(account.stats?.totalInvestment || 0)}
-                    </TableCell>
-                    <TableCell className="text-right py-1">
-                      {formatCurrency(account.stats?.totalReturns || 0)}
-                    </TableCell>
-                    <TableCell className={cn(
-                      "text-right font-medium py-1",
-                      account.stats && account.stats.netPnL >= 0 ? "text-green-600" : "text-red-600"
+                    )
+                  } else if (hasCurrentInvestment) {
+                    // Show only investment
+                    pliDisplay = (
+                      <PLIDisplay 
+                        value={account.stats?.currentInvestment || 0} 
+                        type="investment" 
+                      />
+                    )
+                  } else if (hasRealizedPnL) {
+                    // Show only P/L
+                    pliDisplay = (
+                      <PLIDisplay 
+                        value={account.stats?.realizedPnL || 0} 
+                        type={(account.stats?.realizedPnL || 0) >= 0 ? 'profit' : 'loss'} 
+                      />
+                    )
+                  } else {
+                    pliDisplay = '-'
+                  }
+
+                  return (
+                    <TableRow key={account.id} className={cn(
+                      "h-8",
+                      !account.active && "opacity-60 bg-muted/20"
                     )}>
-                      {account.stats?.netPnL !== undefined ? (
-                        <>
-                          {account.stats.netPnL >= 0 ? '+' : '-'}
-                          {formatCurrency(Math.abs(account.stats.netPnL))}
-                        </>
-                      ) : (
-                        '-'
-                      )}
-                    </TableCell>
-                    <TableCell className="text-center py-1">
-                      <div className="flex items-center gap-1 justify-center">
+                      <TableCell className="font-medium py-1">
+                        {account.userid}
+                      </TableCell>
+                      <TableCell className="py-1">{account.name}</TableCell>
+                      <TableCell className="text-center py-1">
                         <Button
                           variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          onClick={() => {
-                            setEditingAccount(account)
-                            setDialogOpen(true)
-                          }}
+                          size="sm"
+                          onClick={() => toggleAccountStatus(account)}
+                          disabled={toggleLoading === account.id}
+                          className="h-8 w-8 p-0"
                         >
-                          <Edit2 className="h-3.5 w-3.5" />
+                          {toggleLoading === account.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : account.active ? (
+                            <ToggleRight className="h-5 w-5 text-green-600" />
+                          ) : (
+                            <ToggleLeft className="h-5 w-5 text-gray-400" />
+                          )}
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-destructive hover:text-destructive"
-                          onClick={() => setDeleteAccountId(account.id)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))
+                      </TableCell>
+                      <TableCell className="text-center py-1">
+                        <div className="flex flex-col items-center gap-1">
+                          <span className="font-medium">{account.stats?.totalTransactions || 0}</span>
+                          {account.stats && account.stats.totalTransactions > 0 && (
+                            <div className="flex gap-1 text-xs text-muted-foreground">
+                              <span className="text-green-600">{account.stats.buyTransactions} buy</span>
+                              <span>•</span>
+                              <span className="text-red-600">{account.stats.sellTransactions} sell</span>
+                            </div>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center py-1">
+                        <div className="flex flex-col items-center gap-1">
+                          <span className="font-medium">{account.stats?.activeStocks || 0}</span>
+                          <span className="text-xs text-muted-foreground">
+                            of {account.stats?.totalStocks || 0} total
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right font-medium py-1">
+                        {formatCurrency(account.stats?.totalInvestment || 0)}
+                      </TableCell>
+                      <TableCell className="text-right py-1">
+                        {formatCurrency(account.stats?.totalReturns || 0)}
+                      </TableCell>
+                      <TableCell className="text-right font-medium py-1">
+                        {pliDisplay}
+                      </TableCell>
+                      <TableCell className="text-center py-1">
+                        <div className="flex items-center gap-1 justify-center">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={() => {
+                              setEditingAccount(account)
+                              setDialogOpen(true)
+                            }}
+                          >
+                            <Edit2 className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive hover:text-destructive"
+                            onClick={() => setDeleteAccountId(account.id)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })
               )}
             </TableBody>
           </Table>

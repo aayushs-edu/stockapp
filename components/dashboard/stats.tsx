@@ -82,9 +82,9 @@ export async function DashboardStats() {
       value: formatCurrency(currentInvestment),
       icon: Wallet,
       description: 'Active positions value',
-      trend: 'neutral',
-      gradient: 'from-amber-500 to-amber-600',
-      bgGradient: 'from-amber-50 to-amber-100 dark:from-amber-950/20 dark:to-amber-900/20'
+      trend: 'investment',
+      gradient: 'from-amber-600 to-yellow-600',
+      bgGradient: 'from-amber-50 to-yellow-100 dark:from-amber-950/20 dark:to-yellow-900/20'
     },
     {
       title: 'Total Deployed',
@@ -96,11 +96,11 @@ export async function DashboardStats() {
       bgGradient: 'from-blue-50 to-blue-100 dark:from-blue-950/20 dark:to-blue-900/20'
     },
     {
-      title: 'Realized P&L',
+      title: 'Realized P/L',
       value: formatCurrency(Math.abs(realizedPnL)),
       icon: realizedPnL >= 0 ? TrendingUp : TrendingDown,
       description: `${realizedPnL >= 0 ? 'Profit' : 'Loss'} from closed positions`,
-      trend: realizedPnL >= 0 ? 'up' : 'down',
+      trend: realizedPnL >= 0 ? 'profit' : 'loss',
       gradient: realizedPnL >= 0 ? 'from-emerald-500 to-emerald-600' : 'from-red-500 to-red-600',
       bgGradient: realizedPnL >= 0 
         ? 'from-emerald-50 to-emerald-100 dark:from-emerald-950/20 dark:to-emerald-900/20' 
@@ -148,18 +148,23 @@ export async function DashboardStats() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{stat.value}</div>
+              <div className={cn(
+                "text-2xl font-bold",
+                stat.trend === 'profit' && "text-emerald-600 dark:text-emerald-400",
+                stat.trend === 'loss' && "text-red-600 dark:text-red-400",
+                stat.trend === 'investment' && "text-amber-600 dark:text-amber-400"
+              )}>
+                {stat.value}
+              </div>
               <p className={cn(
                 "text-xs mt-1 flex items-center gap-1",
-                stat.trend === 'up' && "text-emerald-600 dark:text-emerald-400",
-                stat.trend === 'down' && "text-red-600 dark:text-red-400",
+                stat.trend === 'profit' && "text-emerald-600 dark:text-emerald-400",
+                stat.trend === 'loss' && "text-red-600 dark:text-red-400",
+                stat.trend === 'investment' && "text-amber-600 dark:text-amber-400",
                 stat.trend === 'neutral' && "text-muted-foreground"
               )}>
-                {stat.trend !== 'neutral' && (
-                  stat.trend === 'up' ? 
-                    <ArrowUpRight className="h-3 w-3" /> : 
-                    <ArrowDownRight className="h-3 w-3" />
-                )}
+                {stat.trend === 'profit' && <ArrowUpRight className="h-3 w-3" />}
+                {stat.trend === 'loss' && <ArrowDownRight className="h-3 w-3" />}
                 {stat.description}
               </p>
             </CardContent>

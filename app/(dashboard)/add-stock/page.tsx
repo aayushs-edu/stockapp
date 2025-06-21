@@ -90,7 +90,6 @@ export default function AddStockPage() {
   const [parsedData, setParsedData] = useState<ParsedTransaction[]>([])
   const [uploadLoading, setUploadLoading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
-  const [saveValues, setSaveValues] = useState(true)
   const [previousValues, setPreviousValues] = useState<z.infer<typeof formSchema> | null>(null)
   
   const { toast } = useToast()
@@ -134,38 +133,21 @@ export default function AddStockPage() {
       })
       setPreviousValues(values) // Save the just-submitted values
       
-      if (saveValues) {
-        // Reset form but keep all values (including quantity and price)
-        form.reset({
-          userid: values.userid,
-          date: values.date,
-          stock: values.stock,
-          action: values.action,
-          source: values.source,
-          quantity: values.quantity,
-          price: values.price,
-          brokerage: values.brokerage,
-          remarks: values.remarks,
-          orderRef: '',
-        })
-        // Focus on quantity field after reset
-        setTimeout(() => {
-          const quantityField = document.querySelector('input[name="quantity"]') as HTMLInputElement
-          if (quantityField) {
-            quantityField.focus()
-            quantityField.select()
-          }
-        }, 100)
-      } else {
-        // Reset form completely but keep the same account selected
-        form.reset({
-          userid: values.userid,
-          action: 'Buy',
-          brokerage: 0,
-          remarks: '',
-          orderRef: '',
-        })
-      }
+      // Always reset form but keep only the account selected
+      form.reset({
+        userid: values.userid, // Keep the account
+        // All other fields will be cleared (undefined/empty)
+        date: undefined,
+        stock: '',
+        action: 'Buy',
+        source: '',
+        quantity: 0,
+        price: 0,
+        brokerage: 0,
+        remarks: '',
+        orderRef: '',
+      })
+
     } catch (error) {
       toast({
         title: 'Error',
@@ -176,6 +158,7 @@ export default function AddStockPage() {
       setLoading(false)
     }
   }
+
 
   // File upload handler
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -563,26 +546,15 @@ export default function AddStockPage() {
                       )}
                     />
                   </div>
-
-                  {/* Save Values Option */}
+                  
+                  {/* Form Actions */}
                   <div className="flex items-center justify-between pt-2 border-t">
                     <div className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        id="saveValues"
-                        checked={saveValues}
-                        onChange={(e) => setSaveValues(e.target.checked)}
-                        className="rounded border-gray-300 text-primary focus:ring-primary"
-                      />
-                      <label htmlFor="saveValues" className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        Save values after adding transaction
-                      </label>
                       {previousValues && (
                         <Button
                           type="button"
                           size="sm"
                           variant="outline"
-                          className="ml-2"
                           onClick={() => form.reset(previousValues)}
                         >
                           Restore Previous Values

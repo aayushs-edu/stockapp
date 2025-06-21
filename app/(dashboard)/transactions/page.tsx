@@ -71,6 +71,31 @@ type Transaction = {
   }
 }
 
+// Helper component for P/L/I display
+const PLIDisplay = ({ value, type }: { value: number, type: 'profit' | 'loss' | 'investment' }) => {
+  const getColorClass = () => {
+    switch (type) {
+      case 'profit': return 'text-emerald-600 dark:text-emerald-400'
+      case 'loss': return 'text-red-600 dark:text-red-400'
+      case 'investment': return 'text-amber-600 dark:text-amber-400'
+    }
+  }
+
+  const getPrefix = () => {
+    switch (type) {
+      case 'profit': return '+'
+      case 'loss': return '-'
+      case 'investment': return ''
+    }
+  }
+
+  return (
+    <span className={getColorClass()}>
+      {getPrefix()}{formatCurrency(Math.abs(value))}
+    </span>
+  )
+}
+
 // Custom filter function for account filtering
 const accountFilter: FilterFn<Transaction> = (row, columnId, filterValue) => {
   return row.original.userid === filterValue
@@ -387,7 +412,8 @@ export default function TransactionsPage() {
         netQty: 0,
         remainingAvgBuyPrice: 0,
         currentInvestment: 0,
-        remainingBuyValue: 0
+        remainingBuyValue: 0,
+        realizedPnL: 0
       }
     }
 
@@ -408,6 +434,9 @@ export default function TransactionsPage() {
     
     // Calculate current investment (buy total - sell total)
     const currentInvestment = buyTotal - sellTotal
+    
+    // Calculate realized P/L = sell total - (avg buy price * sold quantity)
+    const realizedPnL = sellTotal - (avgBuyPrice * sellQty)
     
     // Calculate remaining average buy price using FIFO
     let remainingAvgBuyPrice = 0
@@ -464,7 +493,8 @@ export default function TransactionsPage() {
       netQty,
       remainingAvgBuyPrice,
       currentInvestment,
-      remainingBuyValue
+      remainingBuyValue,
+      realizedPnL
     }
   }
 
@@ -769,9 +799,18 @@ export default function TransactionsPage() {
                     <p className="text-xl font-bold">{formatCurrency(summary.sellTotal)}</p>
                   </div>
                   <div className="space-y-1">
-                    <p className="text-sm text-muted-foreground">Net P/L</p>
-                    <p className={`text-xl font-bold ${summary.sellTotal - summary.buyTotal >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {formatCurrency(summary.sellTotal - summary.buyTotal)}
+                    <p className="text-sm text-muted-foreground">
+                      {summary.netQty > 0 ? 'Current Investment' : 'Realized P/L'}
+                    </p>
+                    <p className="text-xl font-bold">
+                      {summary.netQty > 0 ? (
+                        <PLIDisplay value={summary.remainingBuyValue} type="investment" />
+                      ) : (
+                        <PLIDisplay 
+                          value={summary.realizedPnL} 
+                          type={summary.realizedPnL >= 0 ? 'profit' : 'loss'} 
+                        />
+                      )}
                     </p>
                   </div>
                   <div className="space-y-1">
@@ -819,8 +858,33 @@ export default function TransactionsPage() {
                             {summary.remainingAvgBuyPrice > 0 ? formatCurrency(summary.remainingAvgBuyPrice) : '-'}</p>
                         </div>
                         <div className="space-y-1">
-                          <p className="text-sm text-muted-foreground">Remaining Buy Value</p>
-                          <p className="text-lg font-semibold">{formatCurrency(summary.remainingBuyValue)}</p>
+                          <p className="text-sm text-muted-foreground">Current Investment</p>
+                          <p className="text-lg font-semibold text-amber-600">
+                            {formatCurrency(summary.remainingBuyValue)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Show both investment and realized P/L if both exist */}
+                  {summary.netQty > 0 && summary.sellQty > 0 && (
+                    <div className="mt-4 p-3 rounded-lg bg-muted/50">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                          <p className="text-sm text-muted-foreground">Current Investment</p>
+                          <p className="text-lg font-semibold">
+                            <PLIDisplay value={summary.remainingBuyValue} type="investment" />
+                          </p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-sm text-muted-foreground">Realized P/L</p>
+                          <p className="text-lg font-semibold">
+                            <PLIDisplay 
+                              value={summary.realizedPnL} 
+                              type={summary.realizedPnL >= 0 ? 'profit' : 'loss'} 
+                            />
+                          </p>
                         </div>
                       </div>
                     </div>
