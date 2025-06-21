@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
-import { Loader2, Plus, TrendingUp, TrendingDown, DollarSign, BarChart3, Package, Edit2, Trash2 } from 'lucide-react'
+import { Loader2, Plus, TrendingUp, TrendingDown, DollarSign, BarChart3, Package, Edit2, Trash2, ToggleLeft, ToggleRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -50,6 +50,8 @@ import { cn } from '@/lib/utils'
 const formSchema = z.object({
   userid: z.string().min(1, 'User ID is required').max(50),
   name: z.string().min(1, 'Name is required').max(100),
+  active: z.boolean().default(true),
+  isin: z.string().max(20).optional(),
 })
 
 interface AccountStats {
@@ -67,6 +69,8 @@ interface Account {
   id: number
   userid: string
   name: string
+  active: boolean
+  isin: string | null
   stats?: AccountStats
 }
 
@@ -77,6 +81,7 @@ export default function AccountsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [editingAccount, setEditingAccount] = useState<Account | null>(null)
   const [deleteAccountId, setDeleteAccountId] = useState<number | null>(null)
+  const [toggleLoading, setToggleLoading] = useState<number | null>(null)
   const { toast } = useToast()
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -84,6 +89,8 @@ export default function AccountsPage() {
     defaultValues: {
       userid: '',
       name: '',
+      active: true,
+      isin: '',
     },
   })
 
@@ -95,6 +102,8 @@ export default function AccountsPage() {
     if (editingAccount) {
       form.setValue('userid', editingAccount.userid)
       form.setValue('name', editingAccount.name)
+      form.setValue('active', editingAccount.active)
+      form.setValue('isin', editingAccount.isin || '')
     } else {
       form.reset()
     }
@@ -188,6 +197,41 @@ export default function AccountsPage() {
     }
   }
 
+  const toggleAccountStatus = async (account: Account) => {
+    setToggleLoading(account.id)
+    try {
+      const response = await fetch(`/api/accounts/${account.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: account.name,
+          active: !account.active,
+          isin: account.isin,
+        }),
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to update account status')
+      }
+
+      toast({
+        title: 'Success',
+        description: `Account ${!account.active ? 'activated' : 'deactivated'} successfully`,
+      })
+      
+      fetchAccounts()
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to update account status',
+        variant: 'destructive',
+      })
+    } finally {
+      setToggleLoading(null)
+    }
+  }
+
   // Calculate summary stats
   const summaryStats = accounts.reduce((acc, account) => {
     if (account.stats) {
@@ -198,6 +242,9 @@ export default function AccountsPage() {
     }
     return acc
   }, { totalInvestment: 0, totalReturns: 0, netPnL: 0, totalTransactions: 0 })
+
+  const activeAccountsCount = accounts.filter(a => a.active).length
+  const inactiveAccountsCount = accounts.filter(a => !a.active).length
 
   return (
     <div className="space-y-6">
@@ -259,6 +306,54 @@ export default function AccountsPage() {
                     </FormItem>
                   )}
                 />
+                <FormField
+                  control={form.control}
+                  name="isin"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>ISIN (Optional)</FormLabel>
+                      <FormControl>
+                        <Input 
+                          placeholder="e.g., INE062A01020" 
+                          {...field} 
+                          disabled={isSubmitting}
+                          maxLength={20}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="active"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-base">Active Account</FormLabel>
+                        <div className="text-sm text-muted-foreground">
+                          Active accounts will appear in dropdown menus
+                        </div>
+                      </div>
+                      <FormControl>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => field.onChange(!field.value)}
+                          disabled={isSubmitting}
+                          className="p-0 h-auto"
+                        >
+                          {field.value ? (
+                            <ToggleRight className="h-6 w-6 text-green-600" />
+                          ) : (
+                            <ToggleLeft className="h-6 w-6 text-gray-400" />
+                          )}
+                        </Button>
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
                 <div className="flex justify-end space-x-2">
                   <Button
                     type="button"
@@ -283,7 +378,7 @@ export default function AccountsPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Accounts</CardTitle>
@@ -292,7 +387,20 @@ export default function AccountsPage() {
           <CardContent>
             <div className="text-2xl font-bold">{accounts.length}</div>
             <p className="text-xs text-muted-foreground">
-              Active trading accounts
+              All trading accounts
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Active Accounts</CardTitle>
+            <Package className="h-4 w-4 text-green-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">{activeAccountsCount}</div>
+            <p className="text-xs text-muted-foreground">
+              Available in dropdowns
             </p>
           </CardContent>
         </Card>
@@ -356,58 +464,64 @@ export default function AccountsPage() {
               <TableRow>
                 <TableHead>User ID</TableHead>
                 <TableHead>Name</TableHead>
+                <TableHead>ISIN</TableHead>
+                <TableHead className="text-center">Status</TableHead>
                 <TableHead className="text-center">Transactions</TableHead>
                 <TableHead className="text-center">Active Stocks</TableHead>
                 <TableHead className="text-right">Investment</TableHead>
                 <TableHead className="text-right">Returns</TableHead>
                 <TableHead className="text-right">Net P/L</TableHead>
-                <TableHead className="text-center">Status</TableHead>
+                <TableHead className="text-center">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center">
+                  <TableCell colSpan={10} className="text-center">
                     <Loader2 className="h-4 w-4 animate-spin mx-auto" />
                   </TableCell>
                 </TableRow>
               ) : accounts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center">
+                  <TableCell colSpan={10} className="text-center">
                     No accounts found
                   </TableCell>
                 </TableRow>
               ) : (
                 accounts.map((account) => (
-                  <TableRow key={account.id}>
-                    <TableCell className="font-medium">
-                      <div className="flex items-center gap-2">
-                        <span>{account.userid}</span>
-                        <div className="flex items-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7"
-                            onClick={() => {
-                              setEditingAccount(account)
-                              setDialogOpen(true)
-                            }}
-                          >
-                            <Edit2 className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-destructive hover:text-destructive"
-                            onClick={() => setDeleteAccountId(account.id)}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      </div>
+                  <TableRow key={account.id} className={cn(
+                    "h-8",
+                    !account.active && "opacity-60 bg-muted/20"
+                  )}>
+                    <TableCell className="font-medium py-1">
+                      {account.userid}
                     </TableCell>
-                    <TableCell>{account.name}</TableCell>
-                    <TableCell className="text-center">
+                    <TableCell className="py-1">{account.name}</TableCell>
+                    <TableCell className="py-1">
+                      {account.isin ? (
+                        <code className="text-xs bg-muted px-1 rounded">{account.isin}</code>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-center py-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => toggleAccountStatus(account)}
+                        disabled={toggleLoading === account.id}
+                        className="h-8 w-8 p-0"
+                      >
+                        {toggleLoading === account.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : account.active ? (
+                          <ToggleRight className="h-5 w-5 text-green-600" />
+                        ) : (
+                          <ToggleLeft className="h-5 w-5 text-gray-400" />
+                        )}
+                      </Button>
+                    </TableCell>
+                    <TableCell className="text-center py-1">
                       <div className="flex flex-col items-center gap-1">
                         <span className="font-medium">{account.stats?.totalTransactions || 0}</span>
                         {account.stats && account.stats.totalTransactions > 0 && (
@@ -419,7 +533,7 @@ export default function AccountsPage() {
                         )}
                       </div>
                     </TableCell>
-                    <TableCell className="text-center">
+                    <TableCell className="text-center py-1">
                       <div className="flex flex-col items-center gap-1">
                         <span className="font-medium">{account.stats?.activeStocks || 0}</span>
                         <span className="text-xs text-muted-foreground">
@@ -427,14 +541,14 @@ export default function AccountsPage() {
                         </span>
                       </div>
                     </TableCell>
-                    <TableCell className="text-right font-medium">
+                    <TableCell className="text-right font-medium py-1">
                       {formatCurrency(account.stats?.totalInvestment || 0)}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right py-1">
                       {formatCurrency(account.stats?.totalReturns || 0)}
                     </TableCell>
                     <TableCell className={cn(
-                      "text-right font-medium",
+                      "text-right font-medium py-1",
                       account.stats && account.stats.netPnL >= 0 ? "text-green-600" : "text-red-600"
                     )}>
                       {account.stats?.netPnL !== undefined ? (
@@ -446,12 +560,28 @@ export default function AccountsPage() {
                         '-'
                       )}
                     </TableCell>
-                    <TableCell className="text-center">
-                      <Badge variant={
-                        account.stats && account.stats.activeStocks > 0 ? "default" : "secondary"
-                      }>
-                        {account.stats && account.stats.activeStocks > 0 ? 'Active' : 'Inactive'}
-                      </Badge>
+                    <TableCell className="text-center py-1">
+                      <div className="flex items-center gap-1 justify-center">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => {
+                            setEditingAccount(account)
+                            setDialogOpen(true)
+                          }}
+                        >
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-destructive hover:text-destructive"
+                          onClick={() => setDeleteAccountId(account.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))

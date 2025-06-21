@@ -304,7 +304,7 @@ export default function TransactionsPage() {
 
   const fetchAccounts = async () => {
     try {
-      const response = await fetch('/api/accounts')
+      const response = await fetch('/api/accounts/active') // Changed from '/api/accounts'
       if (!response.ok) {
         console.error('Failed to fetch accounts:', response.status)
         setAccounts([])

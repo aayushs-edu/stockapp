@@ -10,7 +10,7 @@ export async function GET() {
   }
 
   try {
-    // Get all accounts
+    // Get all accounts (including inactive ones for the accounts page)
     const accounts = await prisma.account.findMany({
       orderBy: { userid: 'asc' }
     })
@@ -139,11 +139,15 @@ export async function POST(request: NextRequest) {
         data: {
           userid: upperCaseUserId,
           name: body.name.trim(),
+          active: body.active !== undefined ? body.active : true, // Default to true
+          isin: body.isin?.trim() || null,
         },
         select: {
           id: true,
           userid: true,
-          name: true
+          name: true,
+          active: true,
+          isin: true
         }
       })
 
@@ -167,11 +171,13 @@ export async function POST(request: NextRequest) {
             id: nextId,
             userid: upperCaseUserId,
             name: body.name.trim(),
+            active: body.active !== undefined ? body.active : true,
           },
           select: {
             id: true,
             userid: true,
-            name: true
+            name: true,
+            active: true,
           }
         })
 

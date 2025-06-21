@@ -90,6 +90,8 @@ export default function AddStockPage() {
   const [parsedData, setParsedData] = useState<ParsedTransaction[]>([])
   const [uploadLoading, setUploadLoading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
+  const [saveValues, setSaveValues] = useState(true)
+  const [previousValues, setPreviousValues] = useState<z.infer<typeof formSchema> | null>(null)
   
   const { toast } = useToast()
   
@@ -104,7 +106,7 @@ export default function AddStockPage() {
   })
 
   useEffect(() => {
-    fetch('/api/accounts')
+    fetch('/api/accounts/active')
       .then(res => res.json())
       .then(data => setAccounts(data))
   }, [])
@@ -130,15 +132,40 @@ export default function AddStockPage() {
         title: 'Success',
         description: 'Stock transaction added successfully',
       })
+      setPreviousValues(values) // Save the just-submitted values
       
-      // Reset form but don't navigate away
-      form.reset({
-        userid: values.userid, // Keep the same account selected
-        action: 'Buy',
-        brokerage: 0,
-        remarks: '',
-        orderRef: '',
-      })
+      if (saveValues) {
+        // Reset form but keep all values (including quantity and price)
+        form.reset({
+          userid: values.userid,
+          date: values.date,
+          stock: values.stock,
+          action: values.action,
+          source: values.source,
+          quantity: values.quantity,
+          price: values.price,
+          brokerage: values.brokerage,
+          remarks: values.remarks,
+          orderRef: '',
+        })
+        // Focus on quantity field after reset
+        setTimeout(() => {
+          const quantityField = document.querySelector('input[name="quantity"]') as HTMLInputElement
+          if (quantityField) {
+            quantityField.focus()
+            quantityField.select()
+          }
+        }, 100)
+      } else {
+        // Reset form completely but keep the same account selected
+        form.reset({
+          userid: values.userid,
+          action: 'Buy',
+          brokerage: 0,
+          remarks: '',
+          orderRef: '',
+        })
+      }
     } catch (error) {
       toast({
         title: 'Error',
@@ -333,9 +360,9 @@ export default function AddStockPage() {
   const invalidCount = parsedData.filter(t => !t.isValid).length
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="max-w-6xl mx-auto">
       <Card>
-        <CardHeader>
+        <CardHeader className="pb-4">
           <CardTitle>Add Stock Transactions</CardTitle>
         </CardHeader>
         <CardContent>
@@ -352,54 +379,55 @@ export default function AddStockPage() {
             </TabsList>
 
             {/* Single Transaction Tab */}
-            <TabsContent value="single" className="space-y-6">
+            <TabsContent value="single" className="space-y-4">
               <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                  <FormField
-                    control={form.control}
-                    name="userid"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Account</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                  {/* Row 1: Account, Date, Stock, Action */}
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="userid"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Account</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select account" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent className="max-h-60 overflow-y-auto">
+                              {accounts.map((account: any) => (
+                                <SelectItem key={account.userid} value={account.userid}>
+                                  {account.userid} - {account.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="date"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Date</FormLabel>
                           <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select an account" />
-                            </SelectTrigger>
+                            <EnhancedDatePicker
+                              value={field.value}
+                              onChange={field.onChange}
+                              placeholder="Select date"
+                              className="w-full"
+                            />
                           </FormControl>
-                          <SelectContent className="max-h-60 overflow-y-auto">
-                            {accounts.map((account: any) => (
-                              <SelectItem key={account.userid} value={account.userid}>
-                                {account.userid} - {account.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
-                  <FormField
-                    control={form.control}
-                    name="date"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Date</FormLabel>
-                        <FormControl>
-                          <EnhancedDatePicker
-                            value={field.value}
-                            onChange={field.onChange}
-                            placeholder="Enter or select date"
-                            className="w-full"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField
                       control={form.control}
                       name="stock"
@@ -419,7 +447,7 @@ export default function AddStockPage() {
                       name="action"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Transaction Type</FormLabel>
+                          <FormLabel>Type</FormLabel>
                           <Select onValueChange={field.onChange} value={field.value}>
                             <FormControl>
                               <SelectTrigger>
@@ -437,21 +465,22 @@ export default function AddStockPage() {
                     />
                   </div>
 
-                  <FormField
-                    control={form.control}
-                    name="source"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Source</FormLabel>
-                        <FormControl>
-                          <Input placeholder="e.g., Demat, Physical" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  {/* Row 2: Source, Quantity, Price, Brokerage */}
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="source"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Source</FormLabel>
+                          <FormControl>
+                            <Input placeholder="e.g., Demat" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
-                  <div className="grid grid-cols-2 gap-4">
                     <FormField
                       control={form.control}
                       name="quantity"
@@ -459,7 +488,7 @@ export default function AddStockPage() {
                         <FormItem>
                           <FormLabel>Quantity</FormLabel>
                           <FormControl>
-                            <Input type="number" step="0.01" {...field} />
+                            <Input type="number" step="0.01" placeholder="0" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -473,15 +502,13 @@ export default function AddStockPage() {
                         <FormItem>
                           <FormLabel>Price per Share</FormLabel>
                           <FormControl>
-                            <Input type="number" step="0.01" {...field} />
+                            <Input type="number" step="0.01" placeholder="0.00" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
-                  </div>
 
-                  <div className="grid grid-cols-2 gap-4">
                     <FormField
                       control={form.control}
                       name="brokerage"
@@ -489,13 +516,16 @@ export default function AddStockPage() {
                         <FormItem>
                           <FormLabel>Brokerage</FormLabel>
                           <FormControl>
-                            <Input type="number" step="0.01" {...field} />
+                            <Input type="number" step="0.01" placeholder="0.00" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
+                  </div>
 
+                  {/* Row 3: Order Ref, Trade Value (readonly), Remarks */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <FormField
                       control={form.control}
                       name="orderRef"
@@ -509,33 +539,58 @@ export default function AddStockPage() {
                         </FormItem>
                       )}
                     />
+
+                    <div className="space-y-2">
+                      <FormLabel>Trade Value</FormLabel>
+                      <div className="h-10 px-3 py-2 rounded-md border bg-muted flex items-center">
+                        <span className="text-lg font-semibold text-primary">
+                          {formatCurrency(tradeValue)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <FormField
+                      control={form.control}
+                      name="remarks"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Remarks</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Optional notes" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                   </div>
 
-                  <div className="rounded-lg bg-muted p-4">
-                    <p className="text-sm font-medium">Trade Value</p>
-                    <p className="text-2xl font-bold">{formatCurrency(tradeValue)}</p>
-                  </div>
+                  {/* Save Values Option */}
+                  <div className="flex items-center justify-between pt-2 border-t">
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id="saveValues"
+                        checked={saveValues}
+                        onChange={(e) => setSaveValues(e.target.checked)}
+                        className="rounded border-gray-300 text-primary focus:ring-primary"
+                      />
+                      <label htmlFor="saveValues" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Save values after adding transaction
+                      </label>
+                      {previousValues && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="ml-2"
+                          onClick={() => form.reset(previousValues)}
+                        >
+                          Restore Previous Values
+                        </Button>
+                      )}
+                    </div>
 
-                  <FormField
-                    control={form.control}
-                    name="remarks"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Remarks</FormLabel>
-                        <FormControl>
-                          <Textarea
-                            placeholder="Any additional notes..."
-                            className="resize-none"
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <div className="flex gap-4">
-                    <Button type="submit" disabled={loading}>
+                    <Button type="submit" disabled={loading} className="min-w-[140px]">
                       {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                       Add Transaction
                     </Button>
@@ -545,13 +600,13 @@ export default function AddStockPage() {
             </TabsContent>
 
             {/* Bulk Upload Tab */}
-            <TabsContent value="bulk" className="space-y-6">
+            <TabsContent value="bulk" className="space-y-4">
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="text-lg font-medium">Upload CSV/Excel File</h3>
                     <p className="text-sm text-muted-foreground">
-                      Upload multiple transactions at once using a CSV or Excel file
+                      Upload multiple transactions at once
                     </p>
                   </div>
                   <Button variant="outline" onClick={downloadSampleCSV}>
@@ -563,9 +618,8 @@ export default function AddStockPage() {
                 <Alert>
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
-                    <strong>CSV Format (no headers required):</strong><br />
-                    Each row should contain: userid, date, stock, action, source, quantity, price, brokerage, remarks, orderRef<br />
-                    <strong>Example:</strong> GRS,2024-01-15,RELIANCE,Buy,Demat,10,2500.50,25.00,Sample transaction,REF001
+                    <strong>CSV Format (no headers):</strong> userid, date, stock, action, source, quantity, price, brokerage, remarks, orderRef<br />
+                    <strong>Example:</strong> GRS,2024-01-15,RELIANCE,Buy,Demat,10,2500.50,25.00,Sample,REF001
                   </AlertDescription>
                 </Alert>
 
@@ -602,45 +656,45 @@ export default function AddStockPage() {
                       )}
                     </div>
 
-                    <div className="border rounded-lg max-h-96 overflow-auto">
+                    <div className="border rounded-lg max-h-64 overflow-auto">
                       <Table>
                         <TableHeader>
-                          <TableRow className="h-10">
-                            <TableHead className="w-12 py-2">Status</TableHead>
-                            <TableHead className="py-2">User ID</TableHead>
-                            <TableHead className="py-2">Date</TableHead>
-                            <TableHead className="py-2">Stock</TableHead>
-                            <TableHead className="py-2">Action</TableHead>
-                            <TableHead className="text-right py-2">Quantity</TableHead>
-                            <TableHead className="text-right py-2">Price</TableHead>
-                            <TableHead className="text-right py-2">Trade Value</TableHead>
-                            <TableHead className="py-2">Errors</TableHead>
+                          <TableRow className="h-8">
+                            <TableHead className="w-12 py-1">Status</TableHead>
+                            <TableHead className="py-1">User ID</TableHead>
+                            <TableHead className="py-1">Date</TableHead>
+                            <TableHead className="py-1">Stock</TableHead>
+                            <TableHead className="py-1">Action</TableHead>
+                            <TableHead className="text-right py-1">Quantity</TableHead>
+                            <TableHead className="text-right py-1">Price</TableHead>
+                            <TableHead className="text-right py-1">Trade Value</TableHead>
+                            <TableHead className="py-1">Errors</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {parsedData.map((transaction, index) => (
-                            <TableRow key={index} className="h-8">
-                              <TableCell className="py-1">
+                            <TableRow key={index} className="h-6">
+                              <TableCell className="py-0.5">
                                 {transaction.isValid ? (
-                                  <Check className="h-4 w-4 text-green-600" />
+                                  <Check className="h-3 w-3 text-green-600" />
                                 ) : (
-                                  <X className="h-4 w-4 text-red-600" />
+                                  <X className="h-3 w-3 text-red-600" />
                                 )}
                               </TableCell>
-                              <TableCell className="py-1">{transaction.userid}</TableCell>
-                              <TableCell className="py-1">{transaction.date}</TableCell>
-                              <TableCell className="py-1">{transaction.stock}</TableCell>
-                              <TableCell className="py-1">
-                                <Badge variant={transaction.action === 'Buy' ? 'default' : 'secondary'}>
+                              <TableCell className="py-0.5 text-xs">{transaction.userid}</TableCell>
+                              <TableCell className="py-0.5 text-xs">{transaction.date}</TableCell>
+                              <TableCell className="py-0.5 text-xs">{transaction.stock}</TableCell>
+                              <TableCell className="py-0.5">
+                                <Badge variant={transaction.action === 'Buy' ? 'default' : 'secondary'} className="text-xs h-4">
                                   {transaction.action}
                                 </Badge>
                               </TableCell>
-                              <TableCell className="text-right py-1">{transaction.quantity}</TableCell>
-                              <TableCell className="text-right py-1">{formatCurrency(transaction.price)}</TableCell>
-                              <TableCell className="text-right py-1">{formatCurrency(transaction.tradeValue || 0)}</TableCell>
-                              <TableCell className="py-1">
+                              <TableCell className="text-right py-0.5 text-xs">{transaction.quantity}</TableCell>
+                              <TableCell className="text-right py-0.5 text-xs">{formatCurrency(transaction.price)}</TableCell>
+                              <TableCell className="text-right py-0.5 text-xs">{formatCurrency(transaction.tradeValue || 0)}</TableCell>
+                              <TableCell className="py-0.5">
                                 {transaction.errors.length > 0 && (
-                                  <div className="text-xs text-red-600">
+                                  <div className="text-xs text-red-600 max-w-[120px] truncate">
                                     {transaction.errors.join(', ')}
                                   </div>
                                 )}

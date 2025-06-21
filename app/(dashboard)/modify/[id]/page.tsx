@@ -87,7 +87,7 @@ export default function ModifyStockPage({ params }: { params: { id: string } }) 
 
   const fetchAccounts = async () => {
     try {
-      const response = await fetch('/api/accounts')
+      const response = await fetch('/api/accounts/active') // Changed from '/api/accounts'
       const data = await response.json()
       if (Array.isArray(data)) {
         setAccounts(data)

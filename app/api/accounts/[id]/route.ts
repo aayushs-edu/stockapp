@@ -34,11 +34,12 @@ export async function PUT(
       return NextResponse.json({ error: 'Account not found' }, { status: 404 })
     }
 
-    // Update account (only name can be updated, not userid)
+    // Update account
     const updatedAccount = await prisma.account.update({
       where: { id },
       data: {
         name: body.name.trim(),
+        active: body.active !== undefined ? body.active : existingAccount.active,
       },
     })
 

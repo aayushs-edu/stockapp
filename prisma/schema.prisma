@@ -8,9 +8,10 @@ datasource db {
 }
 
 model Account {
-  id     Int    @id @default(autoincrement()) 
-  userid String @unique
+  id     Int     @id @default(autoincrement()) 
+  userid String  @unique
   name   String
+  active Boolean @default(true)
 
   @@map("accounts")
 }
@@ -28,6 +29,7 @@ model Stock {
   brokerage  Float
   orderRef   String?  @map("order_ref")
   remarks    String?  @db.Text
+  isin       String?  @db.VarChar(20)
 
   @@index([stock])
   @@index([date])

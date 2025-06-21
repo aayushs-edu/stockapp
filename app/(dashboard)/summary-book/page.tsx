@@ -80,11 +80,19 @@ type StockSummary = {
   accounts: AccountSummary[]
 }
 
+interface Account {
+  userid: string
+  name: string
+  active: boolean
+  isin: string | null
+}
+
 export default function SummaryBookPage() {
   const searchParams = useSearchParams()
   const stockFromUrl = searchParams.get('stock')
   
   const [data, setData] = useState<Transaction[]>([])
+  const [accounts, setAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState(false) // Changed from true
   const [accountFilter, setAccountFilter] = useState<string>('') // Changed from 'all'
   const [stockFilter, setStockFilter] = useState<string>(stockFromUrl || '')
@@ -101,18 +109,11 @@ export default function SummaryBookPage() {
     return Array.from(stocks).sort()
   }, [data])
 
-  // Get unique accounts for dropdown
-  const uniqueAccounts = useMemo(() => {
-    const accountsMap = new Map<string, string>()
-    data.forEach(t => {
-      if (!accountsMap.has(t.userid)) {
-        accountsMap.set(t.userid, t.account?.name || t.userid)
-      }
-    })
-    return Array.from(accountsMap.entries()).sort((a, b) => a[0].localeCompare(b[0]))
-  }, [data])
-
   // Only fetch data when account is selected
+  useEffect(() => {
+    fetchAccounts()
+  }, [])
+
   useEffect(() => {
     if (accountFilter) {
       fetchData()
@@ -125,6 +126,26 @@ export default function SummaryBookPage() {
       setExpandedStocks(new Set([stockFromUrl]))
     }
   }, [stockFromUrl, data])
+
+  const fetchAccounts = async () => {
+    try {
+      const response = await fetch('/api/accounts/active') // Changed to only fetch active accounts
+      if (!response.ok) {
+        console.error('Failed to fetch accounts:', response.status)
+        setAccounts([])
+        return
+      }
+      const result = await response.json()
+      if (Array.isArray(result)) {
+        setAccounts(result)
+      } else {
+        setAccounts([])
+      }
+    } catch (error) {
+      console.error('Failed to fetch accounts:', error)
+      setAccounts([])
+    }
+  }
 
   const fetchData = async () => {
     setLoading(true)
@@ -434,8 +455,8 @@ export default function SummaryBookPage() {
           {accountFilter && (
             <p className="text-sm text-muted-foreground mt-1">
               {accountFilter === 'all' 
-                ? `Consolidated view from ${uniqueAccounts.length} accounts`
-                : `Detailed breakdown for ${uniqueAccounts.find(([userid, name]) => userid === accountFilter)?.[1] || accountFilter}`
+                ? `Consolidated view from ${accounts.length} active accounts`
+                : `Detailed breakdown for ${accounts.find(acc => acc.userid === accountFilter)?.name || accountFilter}`
               }
             </p>
           )}
@@ -512,16 +533,19 @@ export default function SummaryBookPage() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {/* Account Dropdown */}
+            {/* Account Dropdown - Only show active accounts */}
             <Select value={accountFilter} onValueChange={setAccountFilter}>
               <SelectTrigger>
                 <SelectValue placeholder="Select Account" />
               </SelectTrigger>
               <SelectContent className="max-h-60 overflow-y-auto">
-                <SelectItem value="all">All Accounts</SelectItem>
-                {uniqueAccounts.map(([userid, name]) => (
-                  <SelectItem key={userid} value={userid}>
-                    {userid} - {name}
+                <SelectItem value="all">All Active Accounts</SelectItem>
+                {accounts.map((account) => (
+                  <SelectItem key={account.userid} value={account.userid}>
+                    {account.userid} - {account.name}
+                    {account.isin && (
+                      <span className="text-xs text-muted-foreground ml-1">({account.isin})</span>
+                    )}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -632,6 +656,7 @@ export default function SummaryBookPage() {
           <CardContent className="py-12">
             <div className="text-center text-muted-foreground">
               <p>Please select an account to view summary</p>
+              <p className="text-sm mt-2">Only active accounts are available for selection</p>
             </div>
           </CardContent>
         </Card>
