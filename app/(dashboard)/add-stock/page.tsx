@@ -5,11 +5,9 @@ import { useState, useEffect } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 import * as z from 'zod'
-import { format } from 'date-fns'
-import { CalendarIcon, Loader2, Upload, FileText, Plus, Download, AlertCircle, Check, X } from 'lucide-react'
+import { Loader2, Upload, FileText, Plus, Download, AlertCircle, Check, X } from 'lucide-react'
 import { cn, formatCurrency } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Calendar } from '@/components/ui/calendar'
 import {
   Form,
   FormControl,
@@ -19,11 +17,6 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form'
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover'
 import {
   Select,
   SelectContent,
@@ -54,6 +47,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { EnhancedDatePicker } from '@/components/ui/enhanced-date-picker'
 
 const formSchema = z.object({
   userid: z.string().min(1, 'Account is required'),
@@ -90,7 +84,6 @@ export default function AddStockPage() {
   const [accounts, setAccounts] = useState([])
   const [loading, setLoading] = useState(false)
   const [activeTab, setActiveTab] = useState('single')
-  const [dateInput, setDateInput] = useState('')
   
   // Bulk upload states
   const [file, setFile] = useState<File | null>(null)
@@ -115,44 +108,6 @@ export default function AddStockPage() {
       .then(res => res.json())
       .then(data => setAccounts(data))
   }, [])
-
-  // Helper function to parse date input
-  const parseDateInput = (value: string): Date | undefined => {
-    if (!value) return undefined
-    
-    // Try different date formats
-    const formats = [
-      /^(\d{4})-(\d{2})-(\d{2})$/, // YYYY-MM-DD
-      /^(\d{2})\/(\d{2})\/(\d{4})$/, // DD/MM/YYYY
-      /^(\d{2})-(\d{2})-(\d{4})$/, // DD-MM-YYYY
-      /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/, // D/M/YYYY
-    ]
-    
-    for (const format of formats) {
-      const match = value.match(format)
-      if (match) {
-        if (format === formats[0]) {
-          // YYYY-MM-DD
-          return new Date(parseInt(match[1]), parseInt(match[2]) - 1, parseInt(match[3]))
-        } else {
-          // DD/MM/YYYY or DD-MM-YYYY
-          return new Date(parseInt(match[3]), parseInt(match[2]) - 1, parseInt(match[1]))
-        }
-      }
-    }
-    
-    // Try to parse as a natural date
-    const parsed = new Date(value)
-    return isNaN(parsed.getTime()) ? undefined : parsed
-  }
-
-  // Update date when input changes
-  useEffect(() => {
-    const parsed = parseDateInput(dateInput)
-    if (parsed) {
-      form.setValue('date', parsed)
-    }
-  }, [dateInput, form])
 
   const tradeValue = form.watch('quantity') * form.watch('price') || 0
 
@@ -184,7 +139,6 @@ export default function AddStockPage() {
         remarks: '',
         orderRef: '',
       })
-      setDateInput('')
     } catch (error) {
       toast({
         title: 'Error',
@@ -430,52 +384,16 @@ export default function AddStockPage() {
                     control={form.control}
                     name="date"
                     render={({ field }) => (
-                      <FormItem className="flex flex-col">
+                      <FormItem>
                         <FormLabel>Date</FormLabel>
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <FormControl>
-                              <Button
-                                variant={"outline"}
-                                className={cn(
-                                  "w-full pl-3 text-left font-normal",
-                                  !field.value && "text-muted-foreground"
-                                )}
-                              >
-                                {field.value ? (
-                                  format(field.value, "PPP")
-                                ) : (
-                                  <span>Pick a date</span>
-                                )}
-                                <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                              </Button>
-                            </FormControl>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-auto p-0" align="start">
-                            <div className="p-3 border-b">
-                              <Input
-                                placeholder="YYYY-MM-DD or DD/MM/YYYY"
-                                value={dateInput}
-                                onChange={(e) => setDateInput(e.target.value)}
-                                className="text-sm"
-                              />
-                            </div>
-                            <Calendar
-                              mode="single"
-                              selected={field.value}
-                              onSelect={(date) => {
-                                field.onChange(date)
-                                if (date) {
-                                  setDateInput(format(date, 'yyyy-MM-dd'))
-                                }
-                              }}
-                              disabled={(date) =>
-                                date > new Date() || date < new Date("1900-01-01")
-                              }
-                              initialFocus
-                            />
-                          </PopoverContent>
-                        </Popover>
+                        <FormControl>
+                          <EnhancedDatePicker
+                            value={field.value}
+                            onChange={field.onChange}
+                            placeholder="Enter or select date"
+                            className="w-full"
+                          />
+                        </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}

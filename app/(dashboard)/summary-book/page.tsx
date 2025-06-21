@@ -4,7 +4,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { format } from 'date-fns'
 import { useSearchParams } from 'next/navigation'
-import { ChevronDown, ChevronRight, Download, TrendingUp, TrendingDown, CalendarIcon } from 'lucide-react'
+import { ChevronDown, ChevronRight, Download, TrendingUp, TrendingDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -27,11 +27,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
-import { Calendar } from '@/components/ui/calendar'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatCurrency } from '@/lib/utils'
 import { cn } from '@/lib/utils'
+import { EnhancedDatePicker } from '@/components/ui/enhanced-date-picker'
 
 type Transaction = {
   id: number
@@ -92,8 +92,6 @@ export default function SummaryBookPage() {
   const [stockSearchValue, setStockSearchValue] = useState('')
   const [dateFrom, setDateFrom] = useState<Date>()
   const [dateTo, setDateTo] = useState<Date>()
-  const [dateFromInput, setDateFromInput] = useState('')
-  const [dateToInput, setDateToInput] = useState('')
   const [expandedStocks, setExpandedStocks] = useState<Set<string>>(new Set())
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set())
 
@@ -113,49 +111,6 @@ export default function SummaryBookPage() {
     })
     return Array.from(accountsMap.entries()).sort((a, b) => a[0].localeCompare(b[0]))
   }, [data])
-
-  // Helper function to parse date input
-  const parseDateInput = (value: string): Date | undefined => {
-    if (!value) return undefined
-    
-    // Try different date formats
-    const formats = [
-      /^(\d{4})-(\d{2})-(\d{2})$/, // YYYY-MM-DD
-      /^(\d{2})\/(\d{2})\/(\d{4})$/, // DD/MM/YYYY
-      /^(\d{2})-(\d{2})-(\d{4})$/, // DD-MM-YYYY
-      /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/, // D/M/YYYY
-    ]
-    
-    for (const format of formats) {
-      const match = value.match(format)
-      if (match) {
-        if (format === formats[0]) {
-          // YYYY-MM-DD
-          return new Date(parseInt(match[1]), parseInt(match[2]) - 1, parseInt(match[3]))
-        } else {
-          // DD/MM/YYYY or DD-MM-YYYY
-          return new Date(parseInt(match[3]), parseInt(match[2]) - 1, parseInt(match[1]))
-        }
-      }
-    }
-    
-    // Try to parse as a natural date
-    const parsed = new Date(value)
-    return isNaN(parsed.getTime()) ? undefined : parsed
-  }
-
-  // Update dates when input changes
-  useEffect(() => {
-    const parsed = parseDateInput(dateFromInput)
-    if (parsed) setDateFrom(parsed)
-    else if (dateFromInput === '') setDateFrom(undefined)
-  }, [dateFromInput])
-
-  useEffect(() => {
-    const parsed = parseDateInput(dateToInput)
-    if (parsed) setDateTo(parsed)
-    else if (dateToInput === '') setDateTo(undefined)
-  }, [dateToInput])
 
   // Only fetch data when account is selected
   useEffect(() => {
@@ -634,85 +589,21 @@ export default function SummaryBookPage() {
               </PopoverContent>
             </Popover>
 
-            {/* Date Range Filter with typed input */}
+            {/* Date Range Filter with Enhanced Date Picker */}
             <div className="flex gap-2">
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={cn(
-                      "justify-start text-left font-normal flex-1",
-                      !dateFrom && "text-muted-foreground"
-                    )}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {dateFrom ? format(dateFrom, "MMM d, yyyy") : "From"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <div className="p-3 border-b">
-                    <Input
-                      placeholder="YYYY-MM-DD or DD/MM/YYYY"
-                      value={dateFromInput}
-                      onChange={(e) => setDateFromInput(e.target.value)}
-                      className="text-sm"
-                    />
-                  </div>
-                  <Calendar
-                    mode="single"
-                    selected={dateFrom}
-                    onSelect={(date) => {
-                      setDateFrom(date)
-                      if (date) {
-                        setDateFromInput(format(date, 'yyyy-MM-dd'))
-                      }
-                    }}
-                    initialFocus
-                    captionLayout="dropdown-buttons"
-                    fromYear={1900}
-                    toYear={new Date().getFullYear()}
-                  />
-                </PopoverContent>
-              </Popover>
+              <EnhancedDatePicker
+                value={dateFrom}
+                onChange={setDateFrom}
+                placeholder="From date"
+                className="flex-1"
+              />
               
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={cn(
-                      "justify-start text-left font-normal flex-1",
-                      !dateTo && "text-muted-foreground"
-                    )}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {dateTo ? format(dateTo, "MMM d, yyyy") : "To"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <div className="p-3 border-b">
-                    <Input
-                      placeholder="YYYY-MM-DD or DD/MM/YYYY"
-                      value={dateToInput}
-                      onChange={(e) => setDateToInput(e.target.value)}
-                      className="text-sm"
-                    />
-                  </div>
-                  <Calendar
-                    mode="single"
-                    selected={dateTo}
-                    onSelect={(date) => {
-                      setDateTo(date)
-                      if (date) {
-                        setDateToInput(format(date, 'yyyy-MM-dd'))
-                      }
-                    }}
-                    initialFocus
-                    captionLayout="dropdown-buttons"
-                    fromYear={1900}
-                    toYear={new Date().getFullYear()}
-                  />
-                </PopoverContent>
-              </Popover>
+              <EnhancedDatePicker
+                value={dateTo}
+                onChange={setDateTo}
+                placeholder="To date"
+                className="flex-1"
+              />
             </div>
           </div>
           
@@ -727,8 +618,6 @@ export default function SummaryBookPage() {
                   setStockFilter('')
                   setDateFrom(undefined)
                   setDateTo(undefined)
-                  setDateFromInput('')
-                  setDateToInput('')
                 }}
               >
                 Clear All Filters
