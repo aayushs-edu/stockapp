@@ -479,7 +479,7 @@ export default function AccountsPage() {
                 <TableHead className="text-center">Status</TableHead>
                 <TableHead className="text-center">Transactions</TableHead>
                 <TableHead className="text-center">Active Stocks</TableHead>
-                <TableHead className="text-right">Investment</TableHead>
+                <TableHead className="text-right">Deployed</TableHead>
                 <TableHead className="text-right">Returns</TableHead>
                 <TableHead className="text-right">P/L/I</TableHead>
                 <TableHead className="text-center">Actions</TableHead>

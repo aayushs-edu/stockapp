@@ -10,101 +10,182 @@ export async function GET() {
   }
 
   try {
-    // Get all accounts (including inactive ones for the accounts page)
+    // Get all accounts first
     const accounts = await prisma.account.findMany({
       orderBy: { userid: 'asc' }
     })
 
-    // Get transaction counts for each account
-    const accountsWithStats = await Promise.all(
-      accounts.map(async (account) => {
-        const transactionCount = await prisma.stock.count({
-          where: { userid: account.userid }
-        })
+    // Get all transactions for all accounts at once
+    const allTransactions = await prisma.stock.findMany({
+      orderBy: [{ userid: 'asc' }, { stock: 'asc' }, { date: 'asc' }]
+    })
 
-        // Get buy/sell summary
-        const buyStats = await prisma.stock.aggregate({
-          where: {
-            userid: account.userid,
-            action: 'Buy'
-          },
-          _sum: {
-            quantity: true,
-            tradeValue: true,
-            brokerage: true
-          },
-          _count: true
-        })
+    // Group transactions by userid
+    const transactionsByUser = new Map<string, typeof allTransactions>()
+    allTransactions.forEach(transaction => {
+      const userId = transaction.userid
+      if (!transactionsByUser.has(userId)) {
+        transactionsByUser.set(userId, [])
+      }
+      transactionsByUser.get(userId)!.push(transaction)
+    })
 
-        const sellStats = await prisma.stock.aggregate({
-          where: {
-            userid: account.userid,
-            action: 'Sell'
-          },
-          _sum: {
-            quantity: true,
-            tradeValue: true,
-            brokerage: true
-          },
-          _count: true
-        })
-
-        // Calculate current positions
-        const stockPositions = await prisma.stock.groupBy({
-          by: ['stock'],
-          where: {
-            userid: account.userid,
-            action: 'Buy'
-          },
-          _sum: {
-            quantity: true,
-            tradeValue: true
-          }
-        })
-
-        const sellPositions = await prisma.stock.groupBy({
-          by: ['stock'],
-          where: {
-            userid: account.userid,
-            action: 'Sell'
-          },
-          _sum: {
-            quantity: true
-          }
-        })
-
-        const sellMap = new Map(sellPositions.map(s => [s.stock, s._sum.quantity || 0]))
-        
-        const activeStocks = stockPositions.filter(pos => {
-          const buyQty = pos._sum.quantity || 0
-          const sellQty = sellMap.get(pos.stock) || 0
-          return buyQty > sellQty
-        }).length
-
-        const totalInvestment = (buyStats._sum.tradeValue || 0) + (buyStats._sum.brokerage || 0)
-        const totalReturns = (sellStats._sum.tradeValue || 0) - (sellStats._sum.brokerage || 0)
-        const netPnL = totalReturns - (buyStats._sum.tradeValue || 0)
-
+    // Calculate stats for each account using the same logic as summary book
+    const accountsWithStats = accounts.map(account => {
+      const userTransactions = transactionsByUser.get(account.userid) || []
+      
+      if (userTransactions.length === 0) {
         return {
           ...account,
           stats: {
-            totalTransactions: transactionCount,
-            buyTransactions: buyStats._count,
-            sellTransactions: sellStats._count,
-            totalInvestment,
-            totalReturns,
-            netPnL,
-            activeStocks,
-            totalStocks: stockPositions.length
+            totalTransactions: 0,
+            buyTransactions: 0,
+            sellTransactions: 0,
+            totalInvestment: 0,
+            totalReturns: 0,
+            realizedPnL: 0,
+            currentInvestment: 0,
+            activeStocks: 0,
+            totalStocks: 0
           }
         }
+      }
+
+      // Group transactions by stock for this user (same as summary book logic)
+      const stockSummaries = new Map<string, {
+        stock: string
+        buyQty: number
+        sellQty: number
+        netQty: number
+        totalBuyValue: number
+        totalSellValue: number
+        totalBrokerage: number
+        avgBuyPrice: number
+        avgSellPrice: number
+        transactions: typeof userTransactions
+      }>()
+
+      // Process each transaction (same logic as summary book)
+      userTransactions.forEach(transaction => {
+        let stockSummary = stockSummaries.get(transaction.stock)
+        if (!stockSummary) {
+          stockSummary = {
+            stock: transaction.stock,
+            buyQty: 0,
+            sellQty: 0,
+            netQty: 0,
+            totalBuyValue: 0,
+            totalSellValue: 0,
+            totalBrokerage: 0,
+            avgBuyPrice: 0,
+            avgSellPrice: 0,
+            transactions: []
+          }
+          stockSummaries.set(transaction.stock, stockSummary)
+        }
+
+        // Add transaction
+        stockSummary.transactions.push(transaction)
+        stockSummary.totalBrokerage += transaction.brokerage
+
+        // Update quantities and values based on action
+        if (transaction.action === 'Buy') {
+          stockSummary.buyQty += transaction.quantity
+          stockSummary.totalBuyValue += transaction.tradeValue
+        } else {
+          stockSummary.sellQty += transaction.quantity
+          stockSummary.totalSellValue += transaction.tradeValue
+        }
+
+        // Calculate derived values
+        stockSummary.netQty = stockSummary.buyQty - stockSummary.sellQty
+        stockSummary.avgBuyPrice = stockSummary.buyQty > 0 ? stockSummary.totalBuyValue / stockSummary.buyQty : 0
+        stockSummary.avgSellPrice = stockSummary.sellQty > 0 ? stockSummary.totalSellValue / stockSummary.sellQty : 0
       })
-    )
+
+      // Calculate account-level metrics (matching summary book logic)
+      let totalBuyValue = 0
+      let totalSellValue = 0
+      let totalBrokerage = 0
+      let currentInvestment = 0
+      let realizedPnL = 0
+      let activeStocks = 0
+      let buyTransactions = 0
+      let sellTransactions = 0
+
+      Array.from(stockSummaries.values()).forEach(stock => {
+        totalBuyValue += stock.totalBuyValue
+        totalSellValue += stock.totalSellValue
+        totalBrokerage += stock.totalBrokerage
+        
+        // Count transactions
+        buyTransactions += stock.transactions.filter(t => t.action === 'Buy').length
+        sellTransactions += stock.transactions.filter(t => t.action === 'Sell').length
+        
+        if (stock.netQty > 0) {
+          // Stock is still held - count as active and calculate current investment
+          activeStocks++
+          // Current investment = remaining shares * avg buy price (same as summary book)
+          currentInvestment += stock.netQty * stock.avgBuyPrice
+        }
+        
+        if (stock.sellQty > 0) {
+          // Some shares were sold - calculate realized P/L (same as summary book)
+          // Realized P/L = sell value - (avg buy price * sold quantity)
+          realizedPnL += stock.totalSellValue - (stock.avgBuyPrice * stock.sellQty)
+        }
+      })
+
+      // Final calculations matching summary book
+      const totalInvestment = totalBuyValue + totalBrokerage // Total amount invested including brokerage
+      const totalReturns = totalSellValue - (userTransactions.filter(t => t.action === 'Sell').reduce((sum, t) => sum + t.brokerage, 0)) // Net returns after brokerage
+
+      return {
+        ...account,
+        stats: {
+          totalTransactions: userTransactions.length,
+          buyTransactions,
+          sellTransactions,
+          totalInvestment: Math.round(totalInvestment * 100) / 100,
+          totalReturns: Math.round(totalReturns * 100) / 100,
+          realizedPnL: Math.round(realizedPnL * 100) / 100,
+          currentInvestment: Math.round(currentInvestment * 100) / 100,
+          activeStocks,
+          totalStocks: stockSummaries.size
+        }
+      }
+    })
 
     return NextResponse.json(accountsWithStats)
   } catch (error) {
     console.error('Failed to fetch accounts:', error)
-    return NextResponse.json({ error: 'Failed to fetch accounts' }, { status: 500 })
+    
+    // Fallback: return accounts without stats
+    try {
+      const accounts = await prisma.account.findMany({
+        orderBy: { userid: 'asc' }
+      })
+      
+      const accountsWithEmptyStats = accounts.map(account => ({
+        ...account,
+        stats: {
+          totalTransactions: 0,
+          buyTransactions: 0,
+          sellTransactions: 0,
+          totalInvestment: 0,
+          totalReturns: 0,
+          realizedPnL: 0,
+          currentInvestment: 0,
+          activeStocks: 0,
+          totalStocks: 0
+        }
+      }))
+      
+      return NextResponse.json(accountsWithEmptyStats)
+    } catch (fallbackError) {
+      console.error('Fallback also failed:', fallbackError)
+      return NextResponse.json({ error: 'Failed to fetch accounts' }, { status: 500 })
+    }
   }
 }
 
@@ -133,66 +214,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Account ID already exists' }, { status: 400 })
     }
 
-    // Try to create account with auto-increment
-    try {
-      const account = await prisma.account.create({
-        data: {
-          userid: upperCaseUserId,
-          name: body.name.trim(),
-          active: body.active !== undefined ? body.active : true, // Default to true
-        },
-        select: {
-          id: true,
-          userid: true,
-          name: true,
-          active: true,
-        }
-      })
-
-      return NextResponse.json(account)
-    } catch (createError: any) {
-      // If auto-increment fails, try with manual ID as last resort
-      if (createError.code === 'P2002' && createError.meta?.target?.includes('id')) {
-        console.error('Auto-increment failed, attempting manual ID assignment')
-        
-        // Get the highest existing ID
-        const maxIdRecord = await prisma.account.findFirst({
-          orderBy: { id: 'desc' },
-          select: { id: true }
-        })
-        
-        const nextId = (maxIdRecord?.id || 0) + 1
-        
-        // Try creating with explicit ID
-        const account = await prisma.account.create({
-          data: {
-            id: nextId,
-            userid: upperCaseUserId,
-            name: body.name.trim(),
-            active: body.active !== undefined ? body.active : true,
-          },
-          select: {
-            id: true,
-            userid: true,
-            name: true,
-            active: true,
-          }
-        })
-
-        return NextResponse.json(account)
+    // Create account
+    const account = await prisma.account.create({
+      data: {
+        userid: upperCaseUserId,
+        name: body.name.trim(),
+        active: body.active !== undefined ? body.active : true,
+      },
+      select: {
+        id: true,
+        userid: true,
+        name: true,
+        active: true,
       }
-      
-      throw createError
-    }
+    })
+
+    return NextResponse.json(account)
   } catch (error: any) {
     console.error('Failed to create account:', error)
     
-    // Handle different Prisma errors
     if (error.code === 'P2002') {
-      // Check which field caused the unique constraint violation
-      if (error.meta?.target?.includes('userid')) {
-        return NextResponse.json({ error: 'Account ID already exists' }, { status: 400 })
-      }
+      return NextResponse.json({ error: 'Account ID already exists' }, { status: 400 })
     }
     
     return NextResponse.json({ 

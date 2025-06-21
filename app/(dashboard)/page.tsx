@@ -25,14 +25,14 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <Suspense fallback={<div className="flex justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>}>
-        <DashboardStats />
-      </Suspense>
-
       {/* All Stocks Table */}
       <Suspense fallback={<div className="flex justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>}>
         <AllStocksTable />
+      </Suspense>
+
+      {/* Stats Cards */}
+      <Suspense fallback={<div className="flex justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>}>
+        <DashboardStats />
       </Suspense>
       
       {/* Charts Section - Client Component */}
