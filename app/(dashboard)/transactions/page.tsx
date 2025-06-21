@@ -511,12 +511,12 @@ export default function TransactionsPage() {
                 <SelectValue placeholder="Select Account" />
               </SelectTrigger>
               <SelectContent className="max-h-60 overflow-y-auto">
-                <SelectItem value="all">All Accounts</SelectItem>
                 {accounts.map((account) => (
                   <SelectItem key={account.userid} value={account.userid}>
                     {account.userid} - {account.name}
                   </SelectItem>
                 ))}
+                <SelectItem value="all">All Accounts</SelectItem>
               </SelectContent>
             </Select>
 

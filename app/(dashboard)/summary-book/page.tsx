@@ -538,12 +538,12 @@ export default function SummaryBookPage() {
                 <SelectValue placeholder="Select Account" />
               </SelectTrigger>
               <SelectContent className="max-h-60 overflow-y-auto">
-                <SelectItem value="all">All Active Accounts</SelectItem>
                 {accounts.map((account) => (
                   <SelectItem key={account.userid} value={account.userid}>
                     {account.userid} - {account.name}
                   </SelectItem>
                 ))}
+                <SelectItem value="all">All Active Accounts</SelectItem>
               </SelectContent>
             </Select>
             
