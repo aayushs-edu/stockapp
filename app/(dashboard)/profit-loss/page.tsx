@@ -256,40 +256,40 @@ export default function ProfitLossPage() {
         </p>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      {/* Compact Summary Cards */}
+      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Realized P&L</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
+            <CardTitle className="text-xs font-medium">Total Realized P&L</CardTitle>
+            <DollarSign className="h-3 w-3 text-muted-foreground" />
           </CardHeader>
-          <CardContent>
-            <div className={`text-2xl font-bold ${data?.summary.totalRealized >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+          <CardContent className="pb-2">
+            <div className={`text-lg font-bold ${data?.summary.totalRealized >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               {formatCurrency(Math.abs(data?.summary.totalRealized || 0))}
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-[10px] text-muted-foreground">
               From {data?.summary.totalTrades || 0} closed positions
             </p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Win Rate</CardTitle>
-            <Target className="h-4 w-4 text-muted-foreground" />
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
+            <CardTitle className="text-xs font-medium">Win Rate</CardTitle>
+            <Target className="h-3 w-3 text-muted-foreground" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
+          <CardContent className="pb-2">
+            <div className="text-lg font-bold">
               {(data?.summary.winRate || 0).toFixed(1)}%
             </div>
-            <div className="mt-2">
-              <div className="flex justify-between text-xs">
+            <div className="mt-1">
+              <div className="flex justify-between text-[10px]">
                 <span className="text-green-600">Wins</span>
                 <span className="text-red-600">Losses</span>
               </div>
-              <div className="w-full bg-red-600/20 rounded-full h-2 mt-1">
+              <div className="w-full bg-red-600/20 rounded-full h-1.5 mt-0.5">
                 <div 
-                  className="bg-green-600 h-2 rounded-full transition-all"
+                  className="bg-green-600 h-1.5 rounded-full transition-all"
                   style={{ width: `${data?.summary.winRate || 0}%` }}
                 />
               </div>
@@ -298,32 +298,32 @@ export default function ProfitLossPage() {
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Risk/Reward Ratio</CardTitle>
-            <Percent className="h-4 w-4 text-muted-foreground" />
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
+            <CardTitle className="text-xs font-medium">Risk/Reward Ratio</CardTitle>
+            <Percent className="h-3 w-3 text-muted-foreground" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
+          <CardContent className="pb-2">
+            <div className="text-lg font-bold">
               1:{(data?.summary.avgWin / data?.summary.avgLoss || 0).toFixed(2)}
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-[10px] text-muted-foreground">
               Avg Win vs Avg Loss
             </p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Profit Factor</CardTitle>
-            <Activity className="h-4 w-4 text-muted-foreground" />
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
+            <CardTitle className="text-xs font-medium">Profit Factor</CardTitle>
+            <Activity className="h-3 w-3 text-muted-foreground" />
           </CardHeader>
-          <CardContent>
-            <div className={`text-2xl font-bold ${data?.summary.profitFactor >= 1 ? 'text-green-600' : 'text-red-600'}`}>
+          <CardContent className="pb-2">
+            <div className={`text-lg font-bold ${data?.summary.profitFactor >= 1 ? 'text-green-600' : 'text-red-600'}`}>
               {(data?.summary.profitFactor || 0).toFixed(2)}
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-[10px] text-muted-foreground">
               {data?.summary.profitFactor >= 1.5 ? 'Excellent' : 
-               data?.summary.profitFactor >= 1 ? 'Good' : 'Needs improvement'}
+              data?.summary.profitFactor >= 1 ? 'Good' : 'Needs improvement'}
             </p>
           </CardContent>
         </Card>

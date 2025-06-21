@@ -513,41 +513,41 @@ export default function SummaryBookPage() {
         </Button>
       </div>
 
-      {/* Summary Stats */}
+      {/* Compact Summary Stats */}
       {accountFilter && stockSummaries.length > 0 && (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6">
+        <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-6">
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Total Investment</CardTitle>
+            <CardHeader className="pb-1">
+              <CardTitle className="text-xs">Total Investment</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-xl font-bold">{formatCurrency(summary.totalBuyValue)}</div>
+            <CardContent className="pb-2">
+              <div className="text-lg font-bold">{formatCurrency(summary.totalBuyValue)}</div>
             </CardContent>
           </Card>
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Total Returns</CardTitle>
+            <CardHeader className="pb-1">
+              <CardTitle className="text-xs">Total Returns</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-xl font-bold">{formatCurrency(summary.totalSellValue)}</div>
+            <CardContent className="pb-2">
+              <div className="text-lg font-bold">{formatCurrency(summary.totalSellValue)}</div>
             </CardContent>
           </Card>
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Current Investment</CardTitle>
+            <CardHeader className="pb-1">
+              <CardTitle className="text-xs">Current Investment</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-xl font-bold text-amber-600">
+            <CardContent className="pb-2">
+              <div className="text-lg font-bold text-amber-600">
                 {formatCurrency(summary.currentInvestment)}
               </div>
             </CardContent>
           </Card>
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Realized P/L</CardTitle>
+            <CardHeader className="pb-1">
+              <CardTitle className="text-xs">Realized P/L</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-xl font-bold">
+            <CardContent className="pb-2">
+              <div className="text-lg font-bold">
                 <PLIDisplay 
                   value={summary.realizedPnL} 
                   type={summary.realizedPnL >= 0 ? 'profit' : 'loss'} 
@@ -556,24 +556,23 @@ export default function SummaryBookPage() {
             </CardContent>
           </Card>
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Total Brokerage</CardTitle>
+            <CardHeader className="pb-1">
+              <CardTitle className="text-xs">Total Brokerage</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-xl font-bold">{formatCurrency(summary.totalBrokerage)}</div>
+            <CardContent className="pb-2">
+              <div className="text-lg font-bold">{formatCurrency(summary.totalBrokerage)}</div>
             </CardContent>
           </Card>
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Active Positions</CardTitle>
+            <CardHeader className="pb-1">
+              <CardTitle className="text-xs">Active Positions</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-xl font-bold">{summary.activePositions}</div>
+            <CardContent className="pb-2">
+              <div className="text-lg font-bold">{summary.activePositions}</div>
             </CardContent>
           </Card>
         </div>
       )}
-
       {/* Filter */}
       <Card>
         <CardHeader>

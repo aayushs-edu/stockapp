@@ -118,38 +118,38 @@ export async function DashboardStats() {
   ]
 
   return (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+    <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
       {stats.map((stat, index) => {
         const Icon = stat.icon
         return (
           <Card 
             key={index} 
             className={cn(
-              "relative overflow-hidden transition-all hover:shadow-lg",
+              "relative overflow-hidden transition-all hover:shadow-md",
               "bg-gradient-to-br",
               stat.bgGradient
             )}
           >
-            <div className="absolute top-0 right-0 w-32 h-32 transform translate-x-8 -translate-y-8">
+            <div className="absolute top-0 right-0 w-24 h-24 transform translate-x-6 -translate-y-6">
               <div className={cn(
-                "w-full h-full rounded-full opacity-10 bg-gradient-to-br blur-2xl",
+                "w-full h-full rounded-full opacity-10 bg-gradient-to-br blur-xl",
                 stat.gradient
               )} />
             </div>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
+              <CardTitle className="text-xs font-medium">
                 {stat.title}
               </CardTitle>
               <div className={cn(
-                "p-2 rounded-lg bg-gradient-to-br",
+                "p-1.5 rounded-lg bg-gradient-to-br",
                 stat.gradient
               )}>
-                <Icon className="h-4 w-4 text-white" />
+                <Icon className="h-3 w-3 text-white" />
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="pb-3">
               <div className={cn(
-                "text-2xl font-bold",
+                "text-lg font-bold",
                 stat.trend === 'profit' && "text-emerald-600 dark:text-emerald-400",
                 stat.trend === 'loss' && "text-red-600 dark:text-red-400",
                 stat.trend === 'investment' && "text-amber-600 dark:text-amber-400"
@@ -157,14 +157,14 @@ export async function DashboardStats() {
                 {stat.value}
               </div>
               <p className={cn(
-                "text-xs mt-1 flex items-center gap-1",
+                "text-[10px] mt-0.5 flex items-center gap-1 leading-tight",
                 stat.trend === 'profit' && "text-emerald-600 dark:text-emerald-400",
                 stat.trend === 'loss' && "text-red-600 dark:text-red-400",
                 stat.trend === 'investment' && "text-amber-600 dark:text-amber-400",
                 stat.trend === 'neutral' && "text-muted-foreground"
               )}>
-                {stat.trend === 'profit' && <ArrowUpRight className="h-3 w-3" />}
-                {stat.trend === 'loss' && <ArrowDownRight className="h-3 w-3" />}
+                {stat.trend === 'profit' && <ArrowUpRight className="h-2 w-2" />}
+                {stat.trend === 'loss' && <ArrowDownRight className="h-2 w-2" />}
                 {stat.description}
               </p>
             </CardContent>

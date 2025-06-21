@@ -387,85 +387,97 @@ export default function AccountsPage() {
         </Dialog>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Accounts</CardTitle>
-            <Package className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{accounts.length}</div>
-            <p className="text-xs text-muted-foreground">
-              All trading accounts
-            </p>
-          </CardContent>
-        </Card>
+      <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-6">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
+          <CardTitle className="text-xs font-medium">Total Accounts</CardTitle>
+          <Package className="h-3 w-3 text-muted-foreground" />
+        </CardHeader>
+        <CardContent className="pb-2">
+          <div className="text-lg font-bold">{accounts.length}</div>
+          <p className="text-[10px] text-muted-foreground">
+            All trading accounts
+          </p>
+        </CardContent>
+      </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Accounts</CardTitle>
-            <Package className="h-4 w-4 text-green-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">{activeAccountsCount}</div>
-            <p className="text-xs text-muted-foreground">
-              Available in dropdowns
-            </p>
-          </CardContent>
-        </Card>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
+          <CardTitle className="text-xs font-medium">Active Accounts</CardTitle>
+          <Package className="h-3 w-3 text-green-600" />
+        </CardHeader>
+        <CardContent className="pb-2">
+          <div className="text-lg font-bold text-green-600">{activeAccountsCount}</div>
+          <p className="text-[10px] text-muted-foreground">
+            Available in dropdowns
+          </p>
+        </CardContent>
+      </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Current Investment</CardTitle>
-            <DollarSign className="h-4 w-4 text-amber-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-amber-600">
-              {formatCurrency(summaryStats.currentInvestment)}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Active positions
-            </p>
-          </CardContent>
-        </Card>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
+          <CardTitle className="text-xs font-medium">Current Investment</CardTitle>
+          <DollarSign className="h-3 w-3 text-amber-600" />
+        </CardHeader>
+        <CardContent className="pb-2">
+          <div className="text-lg font-bold text-amber-600">
+            {formatCurrency(summaryStats.currentInvestment)}
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            Active positions
+          </p>
+        </CardContent>
+      </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Realized P/L</CardTitle>
-            {summaryStats.realizedPnL >= 0 ? (
-              <TrendingUp className="h-4 w-4 text-emerald-600" />
-            ) : (
-              <TrendingDown className="h-4 w-4 text-red-600" />
-            )}
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              <PLIDisplay 
-                value={summaryStats.realizedPnL} 
-                type={summaryStats.realizedPnL >= 0 ? 'profit' : 'loss'} 
-              />
-            </div>
-            <p className="text-xs text-muted-foreground">
-              From closed positions
-            </p>
-          </CardContent>
-        </Card>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
+          <CardTitle className="text-xs font-medium">Realized P/L</CardTitle>
+          {summaryStats.realizedPnL >= 0 ? (
+            <TrendingUp className="h-3 w-3 text-emerald-600" />
+          ) : (
+            <TrendingDown className="h-3 w-3 text-red-600" />
+          )}
+        </CardHeader>
+        <CardContent className="pb-2">
+          <div className="text-lg font-bold">
+            <PLIDisplay 
+              value={summaryStats.realizedPnL} 
+              type={summaryStats.realizedPnL >= 0 ? 'profit' : 'loss'} 
+            />
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            From closed positions
+          </p>
+        </CardContent>
+      </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Transactions</CardTitle>
-            <BarChart3 className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{summaryStats.totalTransactions}</div>
-            <p className="text-xs text-muted-foreground">
-              All time trades
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
+          <CardTitle className="text-xs font-medium">Total Transactions</CardTitle>
+          <BarChart3 className="h-3 w-3 text-muted-foreground" />
+        </CardHeader>
+        <CardContent className="pb-2">
+          <div className="text-lg font-bold">{summaryStats.totalTransactions}</div>
+          <p className="text-[10px] text-muted-foreground">
+            All time trades
+          </p>
+        </CardContent>
+      </Card>
 
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
+          <CardTitle className="text-xs font-medium">Inactive Accounts</CardTitle>
+          <Package className="h-3 w-3 text-gray-400" />
+        </CardHeader>
+        <CardContent className="pb-2">
+          <div className="text-lg font-bold text-gray-600">{inactiveAccountsCount}</div>
+          <p className="text-[10px] text-muted-foreground">
+            Not in dropdowns
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+    
       <Card>
         <CardHeader>
           <CardTitle>All Accounts</CardTitle>

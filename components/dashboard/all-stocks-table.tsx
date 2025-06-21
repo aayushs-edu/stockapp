@@ -92,15 +92,15 @@ export async function AllStocksTable() {
 
   return (
     <Card className="col-span-full">
-      <CardHeader>
+      <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <BarChart3 className="h-5 w-5 text-muted-foreground" />
-            <CardTitle>All Stocks Overview</CardTitle>
+            <BarChart3 className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-lg">All Stocks Overview</CardTitle>
           </div>
-          <div className="flex gap-6 text-sm">
+          <div className="flex gap-4 text-xs">
             <div>
-              <span className="text-muted-foreground">Total Stocks:</span>{' '}
+              <span className="text-muted-foreground">Total:</span>{' '}
               <span className="font-semibold">{stocksSummary.length}</span>
             </div>
             <div>
@@ -112,7 +112,7 @@ export async function AllStocksTable() {
               <span className="font-semibold text-gray-600">{closedStocks}</span>
             </div>
             <div>
-              <span className="text-muted-foreground">Portfolio Value:</span>{' '}
+              <span className="text-muted-foreground">Portfolio:</span>{' '}
               <span className="font-semibold">{formatCurrency(totalCurrentValue)}</span>
             </div>
             <div>
@@ -126,11 +126,11 @@ export async function AllStocksTable() {
             </div>
           </div>
         </div>
-        <p className="text-sm text-muted-foreground mt-1">
+        <p className="text-xs text-muted-foreground mt-1">
           Click on any stock to view detailed breakdown in Summary Book
         </p>
       </CardHeader>
-      <CardContent>
+      <CardContent className="pt-0">
         <AllStocksTableClient 
           stocks={stocksSummary}
           totalCurrentValue={totalCurrentValue}

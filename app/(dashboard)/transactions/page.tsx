@@ -783,116 +783,117 @@ export default function TransactionsPage() {
             </div>
           </div>
 
-          {filteredData.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Summary</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="space-y-1">
-                    <p className="text-sm text-muted-foreground">Buy Total</p>
-                    <p className="text-xl font-bold">{formatCurrency(summary.buyTotal)}</p>
+          
+      {filteredData.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg">Summary</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">Buy Total</p>
+                <p className="text-lg font-bold">{formatCurrency(summary.buyTotal)}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">Sell Total</p>
+                <p className="text-lg font-bold">{formatCurrency(summary.sellTotal)}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">
+                  {summary.netQty > 0 ? 'Current Investment' : 'Realized P/L'}
+                </p>
+                <p className="text-lg font-bold">
+                  {summary.netQty > 0 ? (
+                    <PLIDisplay value={summary.remainingBuyValue} type="investment" />
+                  ) : (
+                    <PLIDisplay 
+                      value={summary.realizedPnL} 
+                      type={summary.realizedPnL >= 0 ? 'profit' : 'loss'} 
+                    />
+                  )}
+                </p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">Shares Held</p>
+                <p className="text-lg font-bold">{summary.netQty.toFixed(2)}</p>
+              </div>
+            </div>
+            
+            {/* Average Prices Section */}
+            <div className="mt-3 pt-3 border-t">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Avg Buy Price</p>
+                  <p className="text-sm font-semibold">
+                    {summary.avgBuyPrice > 0 ? formatCurrency(summary.avgBuyPrice) : '-'}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Avg Sell Price</p>
+                  <p className="text-sm font-semibold">
+                    {summary.avgSellPrice > 0 ? formatCurrency(summary.avgSellPrice) : '-'}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Buy Quantity</p>
+                  <p className="text-sm font-semibold">{summary.buyQty.toFixed(2)}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Sell Quantity</p>
+                  <p className="text-sm font-semibold">{summary.sellQty.toFixed(2)}</p>
+                </div>
+              </div>
+              
+              {/* Remaining Investment Section */}
+              {summary.netQty > 0 && (
+                <div className="mt-3 p-2 rounded-lg bg-muted/50">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Remaining Shares</p>
+                      <p className="text-sm font-semibold">{summary.netQty.toFixed(2)}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Remaining Avg Buy Price</p>
+                      <p className="text-sm font-semibold text-primary">
+                        {summary.remainingAvgBuyPrice > 0 ? formatCurrency(summary.remainingAvgBuyPrice) : '-'}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Current Investment</p>
+                      <p className="text-sm font-semibold text-amber-600">
+                        {formatCurrency(summary.remainingBuyValue)}
+                      </p>
+                    </div>
                   </div>
-                  <div className="space-y-1">
-                    <p className="text-sm text-muted-foreground">Sell Total</p>
-                    <p className="text-xl font-bold">{formatCurrency(summary.sellTotal)}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-sm text-muted-foreground">
-                      {summary.netQty > 0 ? 'Current Investment' : 'Realized P/L'}
-                    </p>
-                    <p className="text-xl font-bold">
-                      {summary.netQty > 0 ? (
+                </div>
+              )}
+              
+              {/* Show both investment and realized P/L if both exist */}
+              {summary.netQty > 0 && summary.sellQty > 0 && (
+                <div className="mt-3 p-2 rounded-lg bg-muted/50">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Current Investment</p>
+                      <p className="text-sm font-semibold">
                         <PLIDisplay value={summary.remainingBuyValue} type="investment" />
-                      ) : (
+                      </p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Realized P/L</p>
+                      <p className="text-sm font-semibold">
                         <PLIDisplay 
                           value={summary.realizedPnL} 
                           type={summary.realizedPnL >= 0 ? 'profit' : 'loss'} 
                         />
-                      )}
-                    </p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-sm text-muted-foreground">Shares Held</p>
-                    <p className="text-xl font-bold">{summary.netQty.toFixed(2)}</p>
-                  </div>
-                </div>
-                
-                {/* Average Prices Section */}
-                <div className="mt-4 pt-4 border-t">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">Avg Buy Price</p>
-                      <p className="text-lg font-semibold">
-                        {summary.avgBuyPrice > 0 ? formatCurrency(summary.avgBuyPrice) : '-'}
                       </p>
                     </div>
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">Avg Sell Price</p>
-                      <p className="text-lg font-semibold">
-                        {summary.avgSellPrice > 0 ? formatCurrency(summary.avgSellPrice) : '-'}
-                      </p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">Buy Quantity</p>
-                      <p className="text-lg font-semibold">{summary.buyQty.toFixed(2)}</p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">Sell Quantity</p>
-                      <p className="text-lg font-semibold">{summary.sellQty.toFixed(2)}</p>
-                    </div>
                   </div>
-                  
-                  {/* Remaining Investment Section */}
-                  {summary.netQty > 0 && (
-                    <div className="mt-4 p-3 rounded-lg bg-muted/50">
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                        <div className="space-y-1">
-                          <p className="text-sm text-muted-foreground">Remaining Shares</p>
-                          <p className="text-lg font-semibold">{summary.netQty.toFixed(2)}</p>
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-sm text-muted-foreground">Remaining Avg Buy Price</p>
-                          <p className="text-lg font-semibold text-primary">
-                            {summary.remainingAvgBuyPrice > 0 ? formatCurrency(summary.remainingAvgBuyPrice) : '-'}</p>
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-sm text-muted-foreground">Current Investment</p>
-                          <p className="text-lg font-semibold text-amber-600">
-                            {formatCurrency(summary.remainingBuyValue)}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* Show both investment and realized P/L if both exist */}
-                  {summary.netQty > 0 && summary.sellQty > 0 && (
-                    <div className="mt-4 p-3 rounded-lg bg-muted/50">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-1">
-                          <p className="text-sm text-muted-foreground">Current Investment</p>
-                          <p className="text-lg font-semibold">
-                            <PLIDisplay value={summary.remainingBuyValue} type="investment" />
-                          </p>
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-sm text-muted-foreground">Realized P/L</p>
-                          <p className="text-lg font-semibold">
-                            <PLIDisplay 
-                              value={summary.realizedPnL} 
-                              type={summary.realizedPnL >= 0 ? 'profit' : 'loss'} 
-                            />
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
                 </div>
-              </CardContent>
-            </Card>
-          )}
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
         </>
       )}
     </div>
