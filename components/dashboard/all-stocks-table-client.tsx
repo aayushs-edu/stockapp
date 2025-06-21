@@ -78,8 +78,11 @@ export function AllStocksTableClient({
   }, [stocks, sortBy, statusFilter])
 
   const handleStockClick = (stock: string) => {
-    // Navigate to summary-book and let it handle setting "all accounts" automatically
-    router.push(`/summary-book?stock=${encodeURIComponent(stock)}`)
+    // Navigate to summary-book with "all-accounts" filter and specific stock
+    const searchParams = new URLSearchParams({
+      stock: stock
+    })
+    router.push(`/summary-book?${searchParams.toString()}`)
   }
 
   return (
@@ -133,7 +136,7 @@ export function AllStocksTableClient({
             onClick={() => handleStockClick(stock.stock)}
             title={stock.stock} // Tooltip for full text
           >
-            <span className="truncate w-full text-center">
+            <span className="truncate w-full text-center font-bold">
               {stock.stock}
             </span>
           </Button>

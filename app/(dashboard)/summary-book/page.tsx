@@ -117,8 +117,8 @@ export default function SummaryBookPage() {
   
   const [data, setData] = useState<Transaction[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
-  const [loading, setLoading] = useState(false) // Changed from true
-  const [accountFilter, setAccountFilter] = useState<string>('') // Changed from 'all'
+  const [loading, setLoading] = useState(false)
+  const [accountFilter, setAccountFilter] = useState<string>('')
   const [stockFilter, setStockFilter] = useState<string>(stockFromUrl || '')
   const [holdingFilter, setHoldingFilter] = useState<string>('all') // New filter for holdings
   const [stockSearchOpen, setStockSearchOpen] = useState(false)
@@ -134,10 +134,16 @@ export default function SummaryBookPage() {
     return Array.from(stocks).sort()
   }, [data])
 
-  // Only fetch data when account is selected
   useEffect(() => {
     fetchAccounts()
   }, [])
+
+  // Check if we should auto-select "all-accounts" when stock comes from URL
+  useEffect(() => {
+    if (stockFromUrl && !accountFilter && accounts.length > 0) {
+      setAccountFilter('all-accounts')
+    }
+  }, [stockFromUrl, accountFilter, accounts])
 
   useEffect(() => {
     if (accountFilter) {
@@ -154,7 +160,8 @@ export default function SummaryBookPage() {
 
   const fetchAccounts = async () => {
     try {
-      const response = await fetch('/api/accounts/active') // Changed to only fetch active accounts
+      // Fetch ALL accounts (not just active ones)
+      const response = await fetch('/api/accounts')
       if (!response.ok) {
         console.error('Failed to fetch accounts:', response.status)
         setAccounts([])
@@ -162,7 +169,13 @@ export default function SummaryBookPage() {
       }
       const result = await response.json()
       if (Array.isArray(result)) {
-        setAccounts(result)
+        // Extract just the account info without stats
+        const accountsOnly = result.map(account => ({
+          userid: account.userid,
+          name: account.name,
+          active: account.active
+        }))
+        setAccounts(accountsOnly)
       } else {
         setAccounts([])
       }
@@ -331,7 +344,7 @@ export default function SummaryBookPage() {
     let filteredSummaries = summaries
     
     // If a specific account is selected, only show stocks that account has traded
-    if (accountFilter && accountFilter !== 'all') {
+    if (accountFilter && accountFilter !== 'all-accounts' && accountFilter !== 'active-accounts') {
       filteredSummaries = summaries.filter(stock => 
         stock.accounts.some(account => account.userid === accountFilter)
       ).map(stock => ({
@@ -360,7 +373,39 @@ export default function SummaryBookPage() {
           avgSellPrice: totalSellQty > 0 ? totalSellValue / totalSellQty : 0
         }
       })
+    } else if (accountFilter === 'active-accounts') {
+      // Filter to only show active accounts
+      const activeAccountIds = new Set(accounts.filter(acc => acc.active).map(acc => acc.userid))
+      filteredSummaries = summaries.filter(stock => 
+        stock.accounts.some(account => activeAccountIds.has(account.userid))
+      ).map(stock => ({
+        ...stock,
+        // Filter accounts to only show active accounts
+        accounts: stock.accounts.filter(account => activeAccountIds.has(account.userid))
+      }))
+      
+      // Recalculate stock-level summaries for active accounts only
+      filteredSummaries = filteredSummaries.map(stock => {
+        const totalBuyQty = stock.accounts.reduce((sum, acc) => sum + acc.buyQty, 0)
+        const totalSellQty = stock.accounts.reduce((sum, acc) => sum + acc.sellQty, 0)
+        const totalBuyValue = stock.accounts.reduce((sum, acc) => sum + acc.totalBuyValue, 0)
+        const totalSellValue = stock.accounts.reduce((sum, acc) => sum + acc.totalSellValue, 0)
+        const totalBrokerage = stock.accounts.reduce((sum, acc) => sum + acc.totalBrokerage, 0)
+        
+        return {
+          ...stock,
+          totalBuyQty,
+          totalSellQty,
+          totalNetQty: totalBuyQty - totalSellQty,
+          totalBuyValue,
+          totalSellValue,
+          totalBrokerage,
+          avgBuyPrice: totalBuyQty > 0 ? totalBuyValue / totalBuyQty : 0,
+          avgSellPrice: totalSellQty > 0 ? totalSellValue / totalSellQty : 0
+        }
+      })
     }
+    // For 'all-accounts', we show all data as-is
     
     // Apply stock filter if set
     if (stockFilter) {
@@ -376,7 +421,7 @@ export default function SummaryBookPage() {
     // 'all' shows everything, so no additional filtering needed
     
     return filteredSummaries.sort((a, b) => a.stock.localeCompare(b.stock))
-  }, [data, accountFilter, stockFilter, holdingFilter, dateFrom, dateTo])
+  }, [data, accountFilter, stockFilter, holdingFilter, dateFrom, dateTo, accounts])
 
   const toggleStockExpansion = (stock: string) => {
     const newExpanded = new Set(expandedStocks)
@@ -483,6 +528,19 @@ export default function SummaryBookPage() {
 
   const summary = calculateOverallSummary()
 
+  // Helper function to get account display text
+  const getAccountDisplayText = () => {
+    if (!accountFilter) return null
+    
+    if (accountFilter === 'all-accounts') {
+      return 'all accounts'
+    } else if (accountFilter === 'active-accounts') {
+      return 'active accounts'
+    } else {
+      return accountFilter
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -492,16 +550,16 @@ export default function SummaryBookPage() {
             {accountFilter && (
               <span className="text-muted-foreground"> for </span>
             )}
-            {accountFilter === 'all' ? (
-              <span className="text-primary">all accounts</span>
-            ) : accountFilter ? (
-              <span className="text-primary">{accountFilter}</span>
-            ) : null}
+            {getAccountDisplayText() && (
+              <span className="text-primary">{getAccountDisplayText()}</span>
+            )}
           </h1>
           {accountFilter && (
             <p className="text-sm text-muted-foreground mt-1">
-              {accountFilter === 'all' 
-                ? `Consolidated view from ${accounts.length} active accounts`
+              {accountFilter === 'all-accounts' 
+                ? `Consolidated view from all ${accounts.length} accounts (active and inactive)`
+                : accountFilter === 'active-accounts'
+                ? `Consolidated view from ${accounts.filter(acc => acc.active).length} active accounts`
                 : `Detailed breakdown for ${accounts.find(acc => acc.userid === accountFilter)?.name || accountFilter}`
               }
             </p>
@@ -573,6 +631,7 @@ export default function SummaryBookPage() {
           </Card>
         </div>
       )}
+      
       {/* Filter */}
       <Card>
         <CardHeader>
@@ -580,18 +639,28 @@ export default function SummaryBookPage() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-            {/* Account Dropdown - Only show active accounts */}
+            {/* Account Dropdown - Updated with all options */}
             <Select value={accountFilter} onValueChange={setAccountFilter}>
               <SelectTrigger>
                 <SelectValue placeholder="Select Account" />
               </SelectTrigger>
               <SelectContent className="max-h-60 overflow-y-auto">
+                {/* Individual accounts */}
                 {accounts.map((account) => (
                   <SelectItem key={account.userid} value={account.userid}>
-                    {account.userid} - {account.name}
+                    {account.userid} - {account.name} {!account.active && '(Inactive)'}
                   </SelectItem>
                 ))}
-                <SelectItem value="all">All Active Accounts</SelectItem>
+                {/* Separator and aggregate options */}
+                {accounts.length > 0 && (
+                  <>
+                    <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground border-t mt-1 pt-2">
+                      Aggregate Views
+                    </div>
+                    <SelectItem value="active-accounts">All Active Accounts</SelectItem>
+                    <SelectItem value="all-accounts">All Accounts</SelectItem>
+                  </>
+                )}
               </SelectContent>
             </Select>
             
@@ -713,7 +782,7 @@ export default function SummaryBookPage() {
           <CardContent className="py-12">
             <div className="text-center text-muted-foreground">
               <p>Please select an account to view summary</p>
-              <p className="text-sm mt-2">Only active accounts are available for selection</p>
+              <p className="text-sm mt-2">You can choose individual accounts or aggregate views</p>
             </div>
           </CardContent>
         </Card>
