@@ -84,7 +84,6 @@ interface Account {
   userid: string
   name: string
   active: boolean
-  isin: string | null
 }
 
 export default function SummaryBookPage() {
@@ -543,9 +542,6 @@ export default function SummaryBookPage() {
                 {accounts.map((account) => (
                   <SelectItem key={account.userid} value={account.userid}>
                     {account.userid} - {account.name}
-                    {account.isin && (
-                      <span className="text-xs text-muted-foreground ml-1">({account.isin})</span>
-                    )}
                   </SelectItem>
                 ))}
               </SelectContent>

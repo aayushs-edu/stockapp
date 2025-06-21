@@ -140,14 +140,12 @@ export async function POST(request: NextRequest) {
           userid: upperCaseUserId,
           name: body.name.trim(),
           active: body.active !== undefined ? body.active : true, // Default to true
-          isin: body.isin?.trim() || null,
         },
         select: {
           id: true,
           userid: true,
           name: true,
           active: true,
-          isin: true
         }
       })
 

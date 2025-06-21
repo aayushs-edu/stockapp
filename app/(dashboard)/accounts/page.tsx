@@ -51,7 +51,6 @@ const formSchema = z.object({
   userid: z.string().min(1, 'User ID is required').max(50),
   name: z.string().min(1, 'Name is required').max(100),
   active: z.boolean().default(true),
-  isin: z.string().max(20).optional(),
 })
 
 interface AccountStats {
@@ -70,7 +69,6 @@ interface Account {
   userid: string
   name: string
   active: boolean
-  isin: string | null
   stats?: AccountStats
 }
 
@@ -90,7 +88,6 @@ export default function AccountsPage() {
       userid: '',
       name: '',
       active: true,
-      isin: '',
     },
   })
 
@@ -103,7 +100,6 @@ export default function AccountsPage() {
       form.setValue('userid', editingAccount.userid)
       form.setValue('name', editingAccount.name)
       form.setValue('active', editingAccount.active)
-      form.setValue('isin', editingAccount.isin || '')
     } else {
       form.reset()
     }
@@ -206,7 +202,6 @@ export default function AccountsPage() {
         body: JSON.stringify({
           name: account.name,
           active: !account.active,
-          isin: account.isin,
         }),
       })
 
@@ -300,24 +295,6 @@ export default function AccountsPage() {
                           placeholder="Account holder name" 
                           {...field} 
                           disabled={isSubmitting}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="isin"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>ISIN (Optional)</FormLabel>
-                      <FormControl>
-                        <Input 
-                          placeholder="e.g., INE062A01020" 
-                          {...field} 
-                          disabled={isSubmitting}
-                          maxLength={20}
                         />
                       </FormControl>
                       <FormMessage />
@@ -464,7 +441,6 @@ export default function AccountsPage() {
               <TableRow>
                 <TableHead>User ID</TableHead>
                 <TableHead>Name</TableHead>
-                <TableHead>ISIN</TableHead>
                 <TableHead className="text-center">Status</TableHead>
                 <TableHead className="text-center">Transactions</TableHead>
                 <TableHead className="text-center">Active Stocks</TableHead>
@@ -497,13 +473,6 @@ export default function AccountsPage() {
                       {account.userid}
                     </TableCell>
                     <TableCell className="py-1">{account.name}</TableCell>
-                    <TableCell className="py-1">
-                      {account.isin ? (
-                        <code className="text-xs bg-muted px-1 rounded">{account.isin}</code>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
                     <TableCell className="text-center py-1">
                       <Button
                         variant="ghost"
