@@ -64,6 +64,7 @@ type AccountSummary = {
   totalSellValue: number
   totalBrokerage: number
   transactions: Transaction[]
+  remainingTransactions?: Transaction[] // Added to track which transactions contain remaining shares
 }
 
 type StockSummary = {
@@ -84,13 +85,15 @@ export default function SummaryBookPage() {
   const stockFromUrl = searchParams.get('stock')
   
   const [data, setData] = useState<Transaction[]>([])
-  const [loading, setLoading] = useState(true)
-  const [accountFilter, setAccountFilter] = useState<string>('all')
+  const [loading, setLoading] = useState(false) // Changed from true
+  const [accountFilter, setAccountFilter] = useState<string>('') // Changed from 'all'
   const [stockFilter, setStockFilter] = useState<string>(stockFromUrl || '')
   const [stockSearchOpen, setStockSearchOpen] = useState(false)
   const [stockSearchValue, setStockSearchValue] = useState('')
   const [dateFrom, setDateFrom] = useState<Date>()
   const [dateTo, setDateTo] = useState<Date>()
+  const [dateFromInput, setDateFromInput] = useState('')
+  const [dateToInput, setDateToInput] = useState('')
   const [expandedStocks, setExpandedStocks] = useState<Set<string>>(new Set())
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set())
 
@@ -111,9 +114,55 @@ export default function SummaryBookPage() {
     return Array.from(accountsMap.entries()).sort((a, b) => a[0].localeCompare(b[0]))
   }, [data])
 
+  // Helper function to parse date input
+  const parseDateInput = (value: string): Date | undefined => {
+    if (!value) return undefined
+    
+    // Try different date formats
+    const formats = [
+      /^(\d{4})-(\d{2})-(\d{2})$/, // YYYY-MM-DD
+      /^(\d{2})\/(\d{2})\/(\d{4})$/, // DD/MM/YYYY
+      /^(\d{2})-(\d{2})-(\d{4})$/, // DD-MM-YYYY
+      /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/, // D/M/YYYY
+    ]
+    
+    for (const format of formats) {
+      const match = value.match(format)
+      if (match) {
+        if (format === formats[0]) {
+          // YYYY-MM-DD
+          return new Date(parseInt(match[1]), parseInt(match[2]) - 1, parseInt(match[3]))
+        } else {
+          // DD/MM/YYYY or DD-MM-YYYY
+          return new Date(parseInt(match[3]), parseInt(match[2]) - 1, parseInt(match[1]))
+        }
+      }
+    }
+    
+    // Try to parse as a natural date
+    const parsed = new Date(value)
+    return isNaN(parsed.getTime()) ? undefined : parsed
+  }
+
+  // Update dates when input changes
   useEffect(() => {
-    fetchData()
-  }, [])
+    const parsed = parseDateInput(dateFromInput)
+    if (parsed) setDateFrom(parsed)
+    else if (dateFromInput === '') setDateFrom(undefined)
+  }, [dateFromInput])
+
+  useEffect(() => {
+    const parsed = parseDateInput(dateToInput)
+    if (parsed) setDateTo(parsed)
+    else if (dateToInput === '') setDateTo(undefined)
+  }, [dateToInput])
+
+  // Only fetch data when account is selected
+  useEffect(() => {
+    if (accountFilter) {
+      fetchData()
+    }
+  }, [accountFilter])
 
   // Auto-expand if stock filter is set from URL
   useEffect(() => {
@@ -145,6 +194,38 @@ export default function SummaryBookPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  // FIFO calculation for remaining shares
+  const calculateRemainingTransactions = (buyTransactions: Transaction[], totalSoldQty: number): Transaction[] => {
+    if (totalSoldQty <= 0) return buyTransactions
+    
+    const sortedBuyTransactions = [...buyTransactions].sort((a, b) => 
+      new Date(a.date).getTime() - new Date(b.date).getTime()
+    )
+    
+    let remainingSoldQty = totalSoldQty
+    const remainingTransactions: Transaction[] = []
+    
+    for (const buyTx of sortedBuyTransactions) {
+      if (remainingSoldQty <= 0) {
+        // All this transaction remains
+        remainingTransactions.push(buyTx)
+      } else if (remainingSoldQty >= buyTx.quantity) {
+        // This entire transaction was sold
+        remainingSoldQty -= buyTx.quantity
+      } else {
+        // This transaction was partially sold
+        const remainingQty = buyTx.quantity - remainingSoldQty
+        remainingTransactions.push({
+          ...buyTx,
+          quantity: remainingQty
+        })
+        remainingSoldQty = 0
+      }
+    }
+    
+    return remainingTransactions
   }
 
   // Process data into hierarchical structure
@@ -213,6 +294,14 @@ export default function SummaryBookPage() {
       accountSummary.netQty = accountSummary.buyQty - accountSummary.sellQty
       accountSummary.avgBuyPrice = accountSummary.buyQty > 0 ? accountSummary.totalBuyValue / accountSummary.buyQty : 0
       accountSummary.avgSellPrice = accountSummary.sellQty > 0 ? accountSummary.totalSellValue / accountSummary.sellQty : 0
+    })
+
+    // Calculate remaining transactions for each account
+    summaryMap.forEach((stockSummary) => {
+      stockSummary.accounts.forEach(account => {
+        const buyTransactions = account.transactions.filter(t => t.action === 'Buy')
+        account.remainingTransactions = calculateRemainingTransactions(buyTransactions, account.sellQty)
+      })
     })
 
     // Calculate stock-level summaries
@@ -343,6 +432,7 @@ export default function SummaryBookPage() {
     a.href = url
     a.download = `summary_book_${format(new Date(), 'yyyy-MM-dd')}.csv`
     a.click()
+    window.URL.revokeObjectURL(url)
   }
 
   const calculateOverallSummary = () => {
@@ -374,69 +464,91 @@ export default function SummaryBookPage() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold">Summary Book</h1>
-        <Button onClick={exportToCSV}>
+        <div>
+          <h1 className="text-3xl font-bold">
+            Summary Book
+            {accountFilter && (
+              <span className="text-muted-foreground"> for </span>
+            )}
+            {accountFilter === 'all' ? (
+              <span className="text-primary">all accounts</span>
+            ) : accountFilter ? (
+              <span className="text-primary">{accountFilter}</span>
+            ) : null}
+          </h1>
+          {accountFilter && (
+            <p className="text-sm text-muted-foreground mt-1">
+              {accountFilter === 'all' 
+                ? `Consolidated view from ${uniqueAccounts.length} accounts`
+                : `Detailed breakdown for ${uniqueAccounts.find(([userid, name]) => userid === accountFilter)?.[1] || accountFilter}`
+              }
+            </p>
+          )}
+        </div>
+        <Button onClick={exportToCSV} disabled={!accountFilter || stockSummaries.length === 0}>
           <Download className="mr-2 h-4 w-4" />
           Export CSV
         </Button>
       </div>
 
       {/* Summary Stats */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Total Investment</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl font-bold">{formatCurrency(summary.totalBuyValue)}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Total Returns</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl font-bold">{formatCurrency(summary.totalSellValue)}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Net P/L</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className={cn(
-              "text-xl font-bold",
-              summary.netPnL >= 0 ? "text-green-600" : "text-red-600"
-            )}>
-              {formatCurrency(summary.netPnL)}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Total Brokerage</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl font-bold">{formatCurrency(summary.totalBrokerage)}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Unique Stocks</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl font-bold">{summary.uniqueStocks}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Active Positions</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl font-bold">{summary.activePositions}</div>
-          </CardContent>
-        </Card>
-      </div>
+      {accountFilter && stockSummaries.length > 0 && (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Total Investment</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-xl font-bold">{formatCurrency(summary.totalBuyValue)}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Total Returns</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-xl font-bold">{formatCurrency(summary.totalSellValue)}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Net P/L</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className={cn(
+                "text-xl font-bold",
+                summary.netPnL >= 0 ? "text-green-600" : "text-red-600"
+              )}>
+                {formatCurrency(summary.netPnL)}
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Total Brokerage</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-xl font-bold">{formatCurrency(summary.totalBrokerage)}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Unique Stocks</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-xl font-bold">{summary.uniqueStocks}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Active Positions</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-xl font-bold">{summary.activePositions}</div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Filter */}
       <Card>
@@ -522,7 +634,7 @@ export default function SummaryBookPage() {
               </PopoverContent>
             </Popover>
 
-            {/* Date Range Filter */}
+            {/* Date Range Filter with typed input */}
             <div className="flex gap-2">
               <Popover>
                 <PopoverTrigger asChild>
@@ -538,11 +650,27 @@ export default function SummaryBookPage() {
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
+                  <div className="p-3 border-b">
+                    <Input
+                      placeholder="YYYY-MM-DD or DD/MM/YYYY"
+                      value={dateFromInput}
+                      onChange={(e) => setDateFromInput(e.target.value)}
+                      className="text-sm"
+                    />
+                  </div>
                   <Calendar
                     mode="single"
                     selected={dateFrom}
-                    onSelect={setDateFrom}
+                    onSelect={(date) => {
+                      setDateFrom(date)
+                      if (date) {
+                        setDateFromInput(format(date, 'yyyy-MM-dd'))
+                      }
+                    }}
                     initialFocus
+                    captionLayout="dropdown-buttons"
+                    fromYear={1900}
+                    toYear={new Date().getFullYear()}
                   />
                 </PopoverContent>
               </Popover>
@@ -561,11 +689,27 @@ export default function SummaryBookPage() {
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
+                  <div className="p-3 border-b">
+                    <Input
+                      placeholder="YYYY-MM-DD or DD/MM/YYYY"
+                      value={dateToInput}
+                      onChange={(e) => setDateToInput(e.target.value)}
+                      className="text-sm"
+                    />
+                  </div>
                   <Calendar
                     mode="single"
                     selected={dateTo}
-                    onSelect={setDateTo}
+                    onSelect={(date) => {
+                      setDateTo(date)
+                      if (date) {
+                        setDateToInput(format(date, 'yyyy-MM-dd'))
+                      }
+                    }}
                     initialFocus
+                    captionLayout="dropdown-buttons"
+                    fromYear={1900}
+                    toYear={new Date().getFullYear()}
                   />
                 </PopoverContent>
               </Popover>
@@ -573,16 +717,18 @@ export default function SummaryBookPage() {
           </div>
           
           {/* Clear Filters Button */}
-          {((accountFilter && accountFilter !== 'all') || stockFilter || dateFrom || dateTo) && (
+          {(accountFilter || stockFilter || dateFrom || dateTo) && (
             <div className="mt-4">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  setAccountFilter('all')
+                  setAccountFilter('')
                   setStockFilter('')
                   setDateFrom(undefined)
                   setDateTo(undefined)
+                  setDateFromInput('')
+                  setDateToInput('')
                 }}
               >
                 Clear All Filters
@@ -592,194 +738,246 @@ export default function SummaryBookPage() {
         </CardContent>
       </Card>
 
-      {/* Summary Table */}
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-12"></TableHead>
-                <TableHead>Stock / Account</TableHead>
-                <TableHead className="text-right">Buy Qty</TableHead>
-                <TableHead className="text-right">Sell Qty</TableHead>
-                <TableHead className="text-right">Shares Remaining</TableHead>
-                <TableHead className="text-right">Avg Buy Price</TableHead>
-                <TableHead className="text-right">Avg Sell Price</TableHead>
-                <TableHead className="text-right">Total Buy Value</TableHead>
-                <TableHead className="text-right">Total Sell Value</TableHead>
-                <TableHead className="text-right">Brokerage</TableHead>
-                <TableHead className="text-right">Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                <TableRow>
-                  <TableCell colSpan={11} className="h-24 text-center">
-                    Loading...
-                  </TableCell>
+      {!accountFilter ? (
+        <Card>
+          <CardContent className="py-12">
+            <div className="text-center text-muted-foreground">
+              <p>Please select an account to view summary</p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        /* Summary Table */
+        <Card>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow className="h-10">
+                  <TableHead className="w-12"></TableHead>
+                  <TableHead>Stock / Account</TableHead>
+                  <TableHead className="text-right">Buy Qty</TableHead>
+                  <TableHead className="text-right">Sell Qty</TableHead>
+                  <TableHead className="text-right bg-blue-50 dark:bg-blue-950/20">
+                    <span className="text-blue-700 dark:text-blue-300 font-semibold">Shares Remaining</span>
+                  </TableHead>
+                  <TableHead className="text-right">Avg Buy Price</TableHead>
+                  <TableHead className="text-right">Avg Sell Price</TableHead>
+                  <TableHead className="text-right">Total Buy Value</TableHead>
+                  <TableHead className="text-right">Total Sell Value</TableHead>
+                  <TableHead className="text-right">Brokerage</TableHead>
+                  <TableHead className="text-right">Status</TableHead>
                 </TableRow>
-              ) : stockSummaries.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={11} className="h-24 text-center">
-                    No results.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                stockSummaries.map((stock) => (
-                  <>
-                    {/* Level 1: Stock Summary Row */}
-                    <TableRow 
-                      key={stock.stock}
-                      className="font-semibold bg-muted/50 hover:bg-muted cursor-pointer"
-                      onClick={() => toggleStockExpansion(stock.stock)}
-                    >
-                      <TableCell>
-                        {expandedStocks.has(stock.stock) ? (
-                          <ChevronDown className="h-4 w-4" />
-                        ) : (
-                          <ChevronRight className="h-4 w-4" />
-                        )}
-                      </TableCell>
-                      <TableCell className="font-semibold">{stock.stock}</TableCell>
-                      <TableCell className="text-right">{stock.totalBuyQty.toFixed(2)}</TableCell>
-                      <TableCell className="text-right">{stock.totalSellQty.toFixed(2)}</TableCell>
-                      <TableCell className="text-right font-semibold">
-                        {stock.totalNetQty.toFixed(2)}
-                      </TableCell>
-                      <TableCell className="text-right">{formatCurrency(stock.avgBuyPrice)}</TableCell>
-                      <TableCell className="text-right">
-                        {stock.avgSellPrice > 0 ? formatCurrency(stock.avgSellPrice) : '-'}
-                      </TableCell>
-                      <TableCell className="text-right">{formatCurrency(stock.totalBuyValue)}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(stock.totalSellValue)}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(stock.totalBrokerage)}</TableCell>
-                      <TableCell className="text-right">
-                        <Badge variant={stock.totalNetQty > 0 ? 'default' : 'secondary'}>
-                          {stock.totalNetQty > 0 ? 'Holding' : 'Closed'}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={11} className="h-24 text-center">
+                      Loading...
+                    </TableCell>
+                  </TableRow>
+                ) : stockSummaries.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={11} className="h-24 text-center">
+                      No results.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  stockSummaries.map((stock) => (
+                    <>
+                      {/* Level 1: Stock Summary Row */}
+                      <TableRow 
+                        key={stock.stock}
+                        className="font-semibold bg-muted/50 hover:bg-muted cursor-pointer h-8"
+                        onClick={() => toggleStockExpansion(stock.stock)}
+                      >
+                        <TableCell className="py-1">
+                          {expandedStocks.has(stock.stock) ? (
+                            <ChevronDown className="h-4 w-4" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4" />
+                          )}
+                        </TableCell>
+                        <TableCell className="font-semibold py-1">{stock.stock}</TableCell>
+                        <TableCell className="text-right py-1">{stock.totalBuyQty.toFixed(2)}</TableCell>
+                        <TableCell className="text-right py-1">{stock.totalSellQty.toFixed(2)}</TableCell>
+                        <TableCell className="text-right font-semibold py-1 bg-blue-50 dark:bg-blue-950/20">
+                          <span className="text-blue-700 dark:text-blue-300">
+                            {stock.totalNetQty.toFixed(2)}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right py-1">{formatCurrency(stock.avgBuyPrice)}</TableCell>
+                        <TableCell className="text-right py-1">
+                          {stock.avgSellPrice > 0 ? formatCurrency(stock.avgSellPrice) : '-'}
+                        </TableCell>
+                        <TableCell className="text-right py-1">{formatCurrency(stock.totalBuyValue)}</TableCell>
+                        <TableCell className="text-right py-1">{formatCurrency(stock.totalSellValue)}</TableCell>
+                        <TableCell className="text-right py-1">{formatCurrency(stock.totalBrokerage)}</TableCell>
+                        <TableCell className="text-right py-1">
+                          <Badge variant={stock.totalNetQty > 0 ? 'default' : 'secondary'}>
+                            {stock.totalNetQty > 0 ? 'Holding' : 'Closed'}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
 
-                    {/* Level 2: Account Summary Rows */}
-                    {expandedStocks.has(stock.stock) && stock.accounts.map((account) => {
-                      const accountKey = `${stock.stock}-${account.userid}`
-                      const isAccountExpanded = expandedAccounts.has(accountKey)
-                      
-                      return (
-                        <>
-                          <TableRow 
-                            key={accountKey}
-                            className="hover:bg-muted/30 cursor-pointer"
-                            onClick={() => toggleAccountExpansion(stock.stock, account.userid)}
-                          >
-                            <TableCell className="pl-8">
-                              {isAccountExpanded ? (
-                                <ChevronDown className="h-3 w-3" />
-                              ) : (
-                                <ChevronRight className="h-3 w-3" />
-                              )}
-                            </TableCell>
-                            <TableCell className="pl-8">
-                              <div className="flex items-center gap-2">
-                                <span>{account.userid}</span>
-                                <span className="text-sm text-muted-foreground">({account.name})</span>
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-right">{account.buyQty.toFixed(2)}</TableCell>
-                            <TableCell className="text-right">{account.sellQty.toFixed(2)}</TableCell>
-                            <TableCell className="text-right font-medium">
-                              {account.netQty.toFixed(2)}
-                            </TableCell>
-                            <TableCell className="text-right">{formatCurrency(account.avgBuyPrice)}</TableCell>
-                            <TableCell className="text-right">
-                              {account.avgSellPrice > 0 ? formatCurrency(account.avgSellPrice) : '-'}
-                            </TableCell>
-                            <TableCell className="text-right">{formatCurrency(account.totalBuyValue)}</TableCell>
-                            <TableCell className="text-right">{formatCurrency(account.totalSellValue)}</TableCell>
-                            <TableCell className="text-right">{formatCurrency(account.totalBrokerage)}</TableCell>
-                            <TableCell className="text-right">
-                              <Badge variant={account.netQty > 0 ? 'default' : 'secondary'} className="text-xs">
-                                {account.netQty > 0 ? 'Active' : 'Closed'}
-                              </Badge>
-                            </TableCell>
-                          </TableRow>
-
-                          {/* Level 3: Individual Transaction Rows */}
-                          {isAccountExpanded && (
-                            <TableRow>
-                              <TableCell colSpan={11} className="p-0">
-                                <div className="bg-muted/20 p-4">
-                                  <Table>
-                                    <TableHeader>
-                                      <TableRow>
-                                        <TableHead className="w-20">ID</TableHead>
-                                        <TableHead>Date</TableHead>
-                                        <TableHead>Action</TableHead>
-                                        <TableHead>Source</TableHead>
-                                        <TableHead className="text-right">Quantity</TableHead>
-                                        <TableHead className="text-right">Price</TableHead>
-                                        <TableHead className="text-right">Trade Value</TableHead>
-                                        <TableHead className="text-right">Brokerage</TableHead>
-                                        <TableHead className="text-right">Net Value</TableHead>
-                                        <TableHead>Remarks</TableHead>
-                                      </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                      {account.transactions.map((transaction) => {
-                                        const netValue = transaction.action === 'Buy' 
-                                          ? transaction.tradeValue + transaction.brokerage 
-                                          : transaction.tradeValue - transaction.brokerage
-                                        
-                                        return (
-                                          <TableRow key={transaction.id} className="hover:bg-muted/30">
-                                            <TableCell className="font-mono text-xs">#{transaction.id}</TableCell>
-                                            <TableCell>{format(new Date(transaction.date), 'dd-MMM-yy')}</TableCell>
-                                            <TableCell>
-                                              <Badge 
-                                                variant={transaction.action === 'Buy' ? 'default' : 'secondary'} 
-                                                className="text-xs"
-                                              >
-                                                {transaction.action === 'Buy' ? (
-                                                  <TrendingDown className="h-3 w-3 mr-1" />
-                                                ) : (
-                                                  <TrendingUp className="h-3 w-3 mr-1" />
-                                                )}
-                                                {transaction.action}
-                                              </Badge>
-                                            </TableCell>
-                                            <TableCell>{transaction.source || '-'}</TableCell>
-                                            <TableCell className="text-right">{transaction.quantity}</TableCell>
-                                            <TableCell className="text-right">{formatCurrency(transaction.price)}</TableCell>
-                                            <TableCell className="text-right">{formatCurrency(transaction.tradeValue)}</TableCell>
-                                            <TableCell className="text-right">{formatCurrency(transaction.brokerage)}</TableCell>
-                                            <TableCell className={cn(
-                                              "text-right font-medium",
-                                              transaction.action === 'Buy' ? "text-red-600" : "text-green-600"
-                                            )}>
-                                              {transaction.action === 'Buy' ? '-' : '+'}{formatCurrency(netValue)}
-                                            </TableCell>
-                                            <TableCell className="text-xs max-w-[200px] truncate" title={transaction.remarks || ''}>
-                                              {transaction.remarks || '-'}
-                                            </TableCell>
-                                          </TableRow>
-                                        )
-                                      })}
-                                    </TableBody>
-                                  </Table>
+                      {/* Level 2: Account Summary Rows */}
+                      {expandedStocks.has(stock.stock) && stock.accounts.map((account) => {
+                        const accountKey = `${stock.stock}-${account.userid}`
+                        const isAccountExpanded = expandedAccounts.has(accountKey)
+                        
+                        return (
+                          <>
+                            <TableRow 
+                              key={accountKey}
+                              className="hover:bg-muted/30 cursor-pointer h-8"
+                              onClick={() => toggleAccountExpansion(stock.stock, account.userid)}
+                            >
+                              <TableCell className="pl-8 py-1">
+                                {isAccountExpanded ? (
+                                  <ChevronDown className="h-3 w-3" />
+                                ) : (
+                                  <ChevronRight className="h-3 w-3" />
+                                )}
+                              </TableCell>
+                              <TableCell className="pl-8 py-1">
+                                <div className="flex items-center gap-2">
+                                  <span>{account.userid}</span>
+                                  <span className="text-sm text-muted-foreground">({account.name})</span>
                                 </div>
                               </TableCell>
+                              <TableCell className="text-right py-1">{account.buyQty.toFixed(2)}</TableCell>
+                              <TableCell className="text-right py-1">{account.sellQty.toFixed(2)}</TableCell>
+                              <TableCell className="text-right font-medium py-1 bg-blue-50 dark:bg-blue-950/20">
+                                <span className="text-blue-700 dark:text-blue-300">
+                                  {account.netQty.toFixed(2)}
+                                </span>
+                              </TableCell>
+                              <TableCell className="text-right py-1">{formatCurrency(account.avgBuyPrice)}</TableCell>
+                              <TableCell className="text-right py-1">
+                                {account.avgSellPrice > 0 ? formatCurrency(account.avgSellPrice) : '-'}
+                              </TableCell>
+                              <TableCell className="text-right py-1">{formatCurrency(account.totalBuyValue)}</TableCell>
+                              <TableCell className="text-right py-1">{formatCurrency(account.totalSellValue)}</TableCell>
+                              <TableCell className="text-right py-1">{formatCurrency(account.totalBrokerage)}</TableCell>
+                              <TableCell className="text-right py-1">
+                                <Badge variant={account.netQty > 0 ? 'default' : 'secondary'} className="text-xs">
+                                  {account.netQty > 0 ? 'Active' : 'Closed'}
+                                </Badge>
+                              </TableCell>
                             </TableRow>
-                          )}
-                        </>
-                      )
-                    })}
-                  </>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+
+                            {/* Level 3: Individual Transaction Rows */}
+                            {isAccountExpanded && (
+                              <TableRow>
+                                <TableCell colSpan={11} className="p-0">
+                                  <div className="bg-muted/20 p-4">
+                                    {account.netQty > 0 && account.remainingTransactions && account.remainingTransactions.length > 0 && (
+                                      <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg">
+                                        <h4 className="text-sm font-semibold text-blue-800 dark:text-blue-200 mb-2">
+                                          Remaining Shares Distribution (FIFO):
+                                        </h4>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                                          {account.remainingTransactions.map((tx, idx) => (
+                                            <div key={`${tx.id}-${idx}`} className="text-xs bg-white dark:bg-gray-800 p-2 rounded border">
+                                              <div className="font-mono">#{tx.id}</div>
+                                              <div>{format(new Date(tx.date), 'dd-MMM-yy')}</div>
+                                              <div className="font-semibold text-blue-700 dark:text-blue-300">
+                                                {tx.quantity} shares @ {formatCurrency(tx.price)}
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                    
+                                    <Table>
+                                      <TableHeader>
+                                        <TableRow className="h-8">
+                                          <TableHead className="w-20 py-1">ID</TableHead>
+                                          <TableHead className="py-1">Date</TableHead>
+                                          <TableHead className="py-1">Action</TableHead>
+                                          <TableHead className="py-1">Source</TableHead>
+                                          <TableHead className="text-right py-1">Quantity</TableHead>
+                                          <TableHead className="text-right py-1">Price</TableHead>
+                                          <TableHead className="text-right py-1">Trade Value</TableHead>
+                                          <TableHead className="text-right py-1">Brokerage</TableHead>
+                                          <TableHead className="text-right py-1">Net Value</TableHead>
+                                          <TableHead className="py-1">Remarks</TableHead>
+                                        </TableRow>
+                                      </TableHeader>
+                                      <TableBody>
+                                        {account.transactions.map((transaction) => {
+                                          const netValue = transaction.action === 'Buy' 
+                                            ? transaction.tradeValue + transaction.brokerage 
+                                            : transaction.tradeValue - transaction.brokerage
+                                          
+                                          // Check if this transaction contains remaining shares
+                                          const isRemainingTransaction = account.remainingTransactions?.some(
+                                            remainingTx => remainingTx.id === transaction.id
+                                          )
+                                          
+                                          return (
+                                            <TableRow 
+                                              key={transaction.id} 
+                                              className={cn(
+                                                "hover:bg-muted/30 h-8",
+                                                isRemainingTransaction && transaction.action === 'Buy' && 
+                                                "bg-blue-50 dark:bg-blue-950/30 border-l-2 border-blue-500"
+                                              )}
+                                            >
+                                              <TableCell className="font-mono text-xs py-1">
+                                                #{transaction.id}
+                                                {isRemainingTransaction && transaction.action === 'Buy' && (
+                                                  <div className="text-blue-600 dark:text-blue-400 text-[10px]">HOLDING</div>
+                                                )}
+                                              </TableCell>
+                                              <TableCell className="py-1">{format(new Date(transaction.date), 'dd-MMM-yy')}</TableCell>
+                                              <TableCell className="py-1">
+                                                <Badge 
+                                                  variant={transaction.action === 'Buy' ? 'default' : 'secondary'} 
+                                                  className="text-xs"
+                                                >
+                                                  {transaction.action === 'Buy' ? (
+                                                    <TrendingDown className="h-3 w-3 mr-1" />
+                                                  ) : (
+                                                    <TrendingUp className="h-3 w-3 mr-1" />
+                                                  )}
+                                                  {transaction.action}
+                                                </Badge>
+                                              </TableCell>
+                                              <TableCell className="py-1">{transaction.source || '-'}</TableCell>
+                                              <TableCell className="text-right py-1">{transaction.quantity}</TableCell>
+                                              <TableCell className="text-right py-1">{formatCurrency(transaction.price)}</TableCell>
+                                              <TableCell className="text-right py-1">{formatCurrency(transaction.tradeValue)}</TableCell>
+                                              <TableCell className="text-right py-1">{formatCurrency(transaction.brokerage)}</TableCell>
+                                              <TableCell className={cn(
+                                                "text-right font-medium py-1",
+                                                transaction.action === 'Buy' ? "text-red-600" : "text-green-600"
+                                              )}>
+                                                {transaction.action === 'Buy' ? '-' : '+'}{formatCurrency(netValue)}
+                                              </TableCell>
+                                              <TableCell className="text-xs max-w-[200px] truncate py-1" title={transaction.remarks || ''}>
+                                                {transaction.remarks || '-'}
+                                              </TableCell>
+                                            </TableRow>
+                                          )
+                                        })}
+                                      </TableBody>
+                                    </Table>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </>
+                        )
+                      })}
+                    </>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

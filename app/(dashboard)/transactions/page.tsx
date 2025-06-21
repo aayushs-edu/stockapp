@@ -79,19 +79,21 @@ const accountFilter: FilterFn<Transaction> = (row, columnId, filterValue) => {
 export default function TransactionsPage() {
   const [data, setData] = useState<Transaction[]>([])
   const [accounts, setAccounts] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false) // Changed from true
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const router = useRouter()
   
   // Add state for manual filters
-  const [accountFilter, setAccountFilter] = useState<string>('all')
+  const [accountFilter, setAccountFilter] = useState<string>('') // Changed from 'all'
   const [actionFilter, setActionFilter] = useState<string>('all')
   const [stockFilter, setStockFilter] = useState<string>('')
   const [stockSearchOpen, setStockSearchOpen] = useState(false)
   const [stockSearchValue, setStockSearchValue] = useState('')
   const [dateFrom, setDateFrom] = useState<Date>()
   const [dateTo, setDateTo] = useState<Date>()
+  const [dateFromInput, setDateFromInput] = useState('')
+  const [dateToInput, setDateToInput] = useState('')
 
   // Get unique stocks for autocomplete
   const uniqueStocks = useMemo(() => {
@@ -233,12 +235,55 @@ export default function TransactionsPage() {
     },
   ]
 
+  // Helper function to parse date input
+  const parseDateInput = (value: string): Date | undefined => {
+    if (!value) return undefined
+    
+    // Try different date formats
+    const formats = [
+      /^(\d{4})-(\d{2})-(\d{2})$/, // YYYY-MM-DD
+      /^(\d{2})\/(\d{2})\/(\d{4})$/, // DD/MM/YYYY
+      /^(\d{2})-(\d{2})-(\d{4})$/, // DD-MM-YYYY
+      /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/, // D/M/YYYY
+    ]
+    
+    for (const format of formats) {
+      const match = value.match(format)
+      if (match) {
+        if (format === formats[0]) {
+          // YYYY-MM-DD
+          return new Date(parseInt(match[1]), parseInt(match[2]) - 1, parseInt(match[3]))
+        } else {
+          // DD/MM/YYYY or DD-MM-YYYY
+          return new Date(parseInt(match[3]), parseInt(match[2]) - 1, parseInt(match[1]))
+        }
+      }
+    }
+    
+    // Try to parse as a natural date
+    const parsed = new Date(value)
+    return isNaN(parsed.getTime()) ? undefined : parsed
+  }
+
+  // Update dates when input changes
+  useEffect(() => {
+    const parsed = parseDateInput(dateFromInput)
+    if (parsed) setDateFrom(parsed)
+    else if (dateFromInput === '') setDateFrom(undefined)
+  }, [dateFromInput])
+
+  useEffect(() => {
+    const parsed = parseDateInput(dateToInput)
+    if (parsed) setDateTo(parsed)
+    else if (dateToInput === '') setDateTo(undefined)
+  }, [dateToInput])
+
   // Filter data based on manual filters
   const filteredData = useMemo(() => {
     let filtered = [...data]
     
     // Apply account filter
-    if (accountFilter !== 'all') {
+    if (accountFilter && accountFilter !== 'all') {
       filtered = filtered.filter(item => item.userid === accountFilter)
     }
     
@@ -264,9 +309,15 @@ export default function TransactionsPage() {
   }, [data, accountFilter, actionFilter, stockFilter, dateFrom, dateTo])
 
   useEffect(() => {
-    fetchData()
     fetchAccounts()
   }, [])
+
+  // Only fetch data when account is selected
+  useEffect(() => {
+    if (accountFilter) {
+      fetchData()
+    }
+  }, [accountFilter])
 
   const fetchData = async () => {
     setLoading(true)
@@ -325,6 +376,11 @@ export default function TransactionsPage() {
     getFilteredRowModel: getFilteredRowModel(),
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
+    initialState: {
+      pagination: {
+        pageSize: 100, // Changed default to 100
+      },
+    },
     state: {
       sorting,
       columnFilters,
@@ -376,7 +432,7 @@ export default function TransactionsPage() {
         netQty: 0,
         remainingAvgBuyPrice: 0,
         currentInvestment: 0,
-        remainingBuyValue: 0 // Added default
+        remainingBuyValue: 0
       }
     }
 
@@ -441,10 +497,6 @@ export default function TransactionsPage() {
       remainingAvgBuyPrice = totalRemainingQty > 0 ? totalRemainingValue / totalRemainingQty : 0
       // Calculate Remaining Buy Value
       remainingBuyValue = totalRemainingQty * remainingAvgBuyPrice;
-      // Unrealized gain: (current market price - remainingAvgBuyPrice) * netQty
-      // For now, assume current market price is the last buy price (can be replaced with real market data)
-      // const currentMarketPrice = sortedBuyTransactions[sortedBuyTransactions.length - 1]?.price || 0;
-      // unrealizedGain = netQty * (currentMarketPrice - remainingAvgBuyPrice);
     }
 
     return { 
@@ -457,7 +509,7 @@ export default function TransactionsPage() {
       netQty,
       remainingAvgBuyPrice,
       currentInvestment,
-      remainingBuyValue // Use this instead of unrealizedGain
+      remainingBuyValue
     }
   }
 
@@ -466,8 +518,28 @@ export default function TransactionsPage() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold">Trade Book</h1>
-        <Button onClick={exportToCSV}>
+        <div>
+          <h1 className="text-3xl font-bold">
+            Trade Book
+            {accountFilter && (
+              <span className="text-muted-foreground"> for </span>
+            )}
+            {accountFilter === 'all' ? (
+              <span className="text-primary">all accounts</span>
+            ) : accountFilter ? (
+              <span className="text-primary">{accountFilter}</span>
+            ) : null}
+          </h1>
+          {accountFilter && (
+            <p className="text-sm text-muted-foreground mt-1">
+              {accountFilter === 'all' 
+                ? `Showing transactions from ${accounts.length} accounts`
+                : `Showing transactions for ${accounts.find(acc => acc.userid === accountFilter)?.name || accountFilter}`
+              }
+            </p>
+          )}
+        </div>
+        <Button onClick={exportToCSV} disabled={!accountFilter || filteredData.length === 0}>
           <Download className="mr-2 h-4 w-4" />
           Export CSV
         </Button>
@@ -566,7 +638,7 @@ export default function TransactionsPage() {
               </PopoverContent>
             </Popover>
 
-            {/* Date Range Filter */}
+            {/* Date Range Filter with typed input */}
             <div className="flex gap-2">
               <Popover>
                 <PopoverTrigger asChild>
@@ -578,15 +650,31 @@ export default function TransactionsPage() {
                     )}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {dateFrom ? format(dateFrom, "MMM d") : "From"}
+                    {dateFrom ? format(dateFrom, "MMM d, yyyy") : "From"}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
+                  <div className="p-3 border-b">
+                    <Input
+                      placeholder="YYYY-MM-DD or DD/MM/YYYY"
+                      value={dateFromInput}
+                      onChange={(e) => setDateFromInput(e.target.value)}
+                      className="text-sm"
+                    />
+                  </div>
                   <Calendar
                     mode="single"
                     selected={dateFrom}
-                    onSelect={setDateFrom}
+                    onSelect={(date) => {
+                      setDateFrom(date)
+                      if (date) {
+                        setDateFromInput(format(date, 'yyyy-MM-dd'))
+                      }
+                    }}
                     initialFocus
+                    captionLayout="dropdown-buttons"
+                    fromYear={1900}
+                    toYear={new Date().getFullYear()}
                   />
                 </PopoverContent>
               </Popover>
@@ -601,15 +689,31 @@ export default function TransactionsPage() {
                     )}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {dateTo ? format(dateTo, "MMM d") : "To"}
+                    {dateTo ? format(dateTo, "MMM d, yyyy") : "To"}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
+                  <div className="p-3 border-b">
+                    <Input
+                      placeholder="YYYY-MM-DD or DD/MM/YYYY"
+                      value={dateToInput}
+                      onChange={(e) => setDateToInput(e.target.value)}
+                      className="text-sm"
+                    />
+                  </div>
                   <Calendar
                     mode="single"
                     selected={dateTo}
-                    onSelect={setDateTo}
+                    onSelect={(date) => {
+                      setDateTo(date)
+                      if (date) {
+                        setDateToInput(format(date, 'yyyy-MM-dd'))
+                      }
+                    }}
                     initialFocus
+                    captionLayout="dropdown-buttons"
+                    fromYear={1900}
+                    toYear={new Date().getFullYear()}
                   />
                 </PopoverContent>
               </Popover>
@@ -617,17 +721,19 @@ export default function TransactionsPage() {
           </div>
           
           {/* Clear Filters Button */}
-          {(accountFilter !== 'all' || actionFilter !== 'all' || stockFilter || dateFrom || dateTo) && (
+          {(accountFilter || actionFilter !== 'all' || stockFilter || dateFrom || dateTo) && (
             <div className="mt-4">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  setAccountFilter('all')
+                  setAccountFilter('')
                   setActionFilter('all')
                   setStockFilter('')
                   setDateFrom(undefined)
                   setDateTo(undefined)
+                  setDateFromInput('')
+                  setDateToInput('')
                 }}
               >
                 Clear All Filters
@@ -637,188 +743,205 @@ export default function TransactionsPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              {table.getHeaderGroups().map((headerGroup) => (
-                <TableRow key={headerGroup.id}>
-                  {headerGroup.headers.map((header) => {
-                    return (
-                      <TableHead key={header.id}>
-                        {header.isPlaceholder
-                          ? null
-                          : flexRender(
-                              header.column.columnDef.header,
-                              header.getContext()
-                            )}
-                      </TableHead>
-                    )
-                  })}
-                </TableRow>
-              ))}
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                <TableRow>
-                  <TableCell colSpan={columns.length} className="h-24 text-center">
-                    Loading...
-                  </TableCell>
-                </TableRow>
-              ) : table.getRowModel().rows?.length ? (
-                table.getRowModel().rows.map((row) => (
-                  <TableRow
-                    key={row.id}
-                    data-state={row.getIsSelected() && "selected"}
-                  >
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </TableCell>
-                    ))}
+      {!accountFilter ? (
+        <Card>
+          <CardContent className="py-12">
+            <div className="text-center text-muted-foreground">
+              <p>Please select an account to view transactions</p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                {table.getHeaderGroups().map((headerGroup) => (
+                  <TableRow key={headerGroup.id} className="h-10">
+                    {headerGroup.headers.map((header) => {
+                      return (
+                        <TableHead key={header.id} className="py-2">
+                          {header.isPlaceholder
+                            ? null
+                            : flexRender(
+                                header.column.columnDef.header,
+                                header.getContext()
+                              )}
+                        </TableHead>
+                      )
+                    })}
                   </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={columns.length} className="h-24 text-center">
-                    No results.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      <div className="flex items-center justify-between">
-        <div className="flex-1 text-sm text-muted-foreground">
-          Showing {table.getFilteredRowModel().rows.length} of{" "}
-          {filteredData.length} row(s)
-          {(accountFilter !== 'all' || actionFilter !== 'all' || stockFilter || dateFrom || dateTo) && ' (filtered)'}
-        </div>
-        <div className="flex items-center space-x-6 lg:space-x-8">
-          <div className="flex items-center space-x-2">
-            <p className="text-sm font-medium">Rows per page</p>
-            <Select
-              value={`${table.getState().pagination.pageSize}`}
-              onValueChange={(value) => {
-                if (value === 'all') {
-                  table.setPageSize(Number.MAX_SAFE_INTEGER)
-                } else {
-                  table.setPageSize(Number(value))
-                }
-              }}
-            >
-              <SelectTrigger className="h-8 w-[70px]">
-                <SelectValue placeholder={table.getState().pagination.pageSize} />
-              </SelectTrigger>
-              <SelectContent side="top">
-                {[10, 20, 30, 40, 50].map((pageSize) => (
-                  <SelectItem key={pageSize} value={`${pageSize}`}>
-                    {pageSize}
-                  </SelectItem>
                 ))}
-                <SelectItem value="all">
-                  All
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-center space-x-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => table.previousPage()}
-              disabled={!table.getCanPreviousPage()}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => table.nextPage()}
-              disabled={!table.getCanNextPage()}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
-      </div>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={columns.length} className="h-24 text-center">
+                      Loading...
+                    </TableCell>
+                  </TableRow>
+                ) : table.getRowModel().rows?.length ? (
+                  table.getRowModel().rows.map((row) => (
+                    <TableRow
+                      key={row.id}
+                      data-state={row.getIsSelected() && "selected"}
+                      className="h-8" // Reduced row height
+                    >
+                      {row.getVisibleCells().map((cell) => (
+                        <TableCell key={cell.id} className="py-1">
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={columns.length} className="h-24 text-center">
+                      No results.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Summary</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="space-y-1">
-              <p className="text-sm text-muted-foreground">Buy Total</p>
-              <p className="text-xl font-bold">{formatCurrency(summary.buyTotal)}</p>
+      {accountFilter && (
+        <>
+          <div className="flex items-center justify-between">
+            <div className="flex-1 text-sm text-muted-foreground">
+              Showing {table.getFilteredRowModel().rows.length} of{" "}
+              {filteredData.length} row(s)
+              {(accountFilter !== 'all' || actionFilter !== 'all' || stockFilter || dateFrom || dateTo) && ' (filtered)'}
             </div>
-            <div className="space-y-1">
-              <p className="text-sm text-muted-foreground">Sell Total</p>
-              <p className="text-xl font-bold">{formatCurrency(summary.sellTotal)}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm text-muted-foreground">Net P/L</p>
-              <p className={`text-xl font-bold ${summary.sellTotal - summary.buyTotal >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {formatCurrency(summary.sellTotal - summary.buyTotal)}
-              </p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm text-muted-foreground">Shares Held</p>
-              <p className="text-xl font-bold">{summary.netQty.toFixed(2)}</p>
+            <div className="flex items-center space-x-6 lg:space-x-8">
+              <div className="flex items-center space-x-2">
+                <p className="text-sm font-medium">Rows per page</p>
+                <Select
+                  value={`${table.getState().pagination.pageSize}`}
+                  onValueChange={(value) => {
+                    if (value === 'all') {
+                      table.setPageSize(Number.MAX_SAFE_INTEGER)
+                    } else {
+                      table.setPageSize(Number(value))
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-8 w-[70px]">
+                    <SelectValue placeholder={table.getState().pagination.pageSize} />
+                  </SelectTrigger>
+                  <SelectContent side="top">
+                    {[10, 100, 1000, 2000].map((pageSize) => (
+                      <SelectItem key={pageSize} value={`${pageSize}`}>
+                        {pageSize}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value="all">
+                      All
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => table.previousPage()}
+                  disabled={!table.getCanPreviousPage()}
+                >
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => table.nextPage()}
+                  disabled={!table.getCanNextPage()}
+                >
+                  Next
+                </Button>
+              </div>
             </div>
           </div>
-          
-          {/* Average Prices Section */}
-          <div className="mt-4 pt-4 border-t">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">Avg Buy Price</p>
-                <p className="text-lg font-semibold">
-                  {summary.avgBuyPrice > 0 ? formatCurrency(summary.avgBuyPrice) : '-'}
-                </p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">Avg Sell Price</p>
-                <p className="text-lg font-semibold">
-                  {summary.avgSellPrice > 0 ? formatCurrency(summary.avgSellPrice) : '-'}
-                </p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">Buy Quantity</p>
-                <p className="text-lg font-semibold">{summary.buyQty.toFixed(2)}</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">Sell Quantity</p>
-                <p className="text-lg font-semibold">{summary.sellQty.toFixed(2)}</p>
-              </div>
-            </div>
-            
-            {/* Remaining Investment Section */}
-            {summary.netQty > 0 && (
-              <div className="mt-4 p-3 rounded-lg bg-muted/50">
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+
+          {filteredData.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Summary</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="space-y-1">
-                    <p className="text-sm text-muted-foreground">Remaining Shares</p>
-                    <p className="text-lg font-semibold">{summary.netQty.toFixed(2)}</p>
+                    <p className="text-sm text-muted-foreground">Buy Total</p>
+                    <p className="text-xl font-bold">{formatCurrency(summary.buyTotal)}</p>
                   </div>
                   <div className="space-y-1">
-                    <p className="text-sm text-muted-foreground">Remaining Avg Buy Price</p>
-                    <p className="text-lg font-semibold text-primary">
-                      {summary.remainingAvgBuyPrice > 0 ? formatCurrency(summary.remainingAvgBuyPrice) : '-'}</p>
+                    <p className="text-sm text-muted-foreground">Sell Total</p>
+                    <p className="text-xl font-bold">{formatCurrency(summary.sellTotal)}</p>
                   </div>
                   <div className="space-y-1">
-                    <p className="text-sm text-muted-foreground">Remaining Buy Value</p>
-                    <p className="text-lg font-semibold">{formatCurrency(summary.remainingBuyValue)}</p>
+                    <p className="text-sm text-muted-foreground">Net P/L</p>
+                    <p className={`text-xl font-bold ${summary.sellTotal - summary.buyTotal >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {formatCurrency(summary.sellTotal - summary.buyTotal)}
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">Shares Held</p>
+                    <p className="text-xl font-bold">{summary.netQty.toFixed(2)}</p>
                   </div>
                 </div>
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+                
+                {/* Average Prices Section */}
+                <div className="mt-4 pt-4 border-t">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">Avg Buy Price</p>
+                      <p className="text-lg font-semibold">
+                        {summary.avgBuyPrice > 0 ? formatCurrency(summary.avgBuyPrice) : '-'}
+                      </p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">Avg Sell Price</p>
+                      <p className="text-lg font-semibold">
+                        {summary.avgSellPrice > 0 ? formatCurrency(summary.avgSellPrice) : '-'}
+                      </p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">Buy Quantity</p>
+                      <p className="text-lg font-semibold">{summary.buyQty.toFixed(2)}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">Sell Quantity</p>
+                      <p className="text-lg font-semibold">{summary.sellQty.toFixed(2)}</p>
+                    </div>
+                  </div>
+                  
+                  {/* Remaining Investment Section */}
+                  {summary.netQty > 0 && (
+                    <div className="mt-4 p-3 rounded-lg bg-muted/50">
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                        <div className="space-y-1">
+                          <p className="text-sm text-muted-foreground">Remaining Shares</p>
+                          <p className="text-lg font-semibold">{summary.netQty.toFixed(2)}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-sm text-muted-foreground">Remaining Avg Buy Price</p>
+                          <p className="text-lg font-semibold text-primary">
+                            {summary.remainingAvgBuyPrice > 0 ? formatCurrency(summary.remainingAvgBuyPrice) : '-'}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-sm text-muted-foreground">Remaining Buy Value</p>
+                          <p className="text-lg font-semibold">{formatCurrency(summary.remainingBuyValue)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
     </div>
   )
 }

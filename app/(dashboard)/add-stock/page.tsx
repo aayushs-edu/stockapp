@@ -1,7 +1,7 @@
+// app/(dashboard)/add-stock/page.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 import * as z from 'zod'
@@ -90,6 +90,7 @@ export default function AddStockPage() {
   const [accounts, setAccounts] = useState([])
   const [loading, setLoading] = useState(false)
   const [activeTab, setActiveTab] = useState('single')
+  const [dateInput, setDateInput] = useState('')
   
   // Bulk upload states
   const [file, setFile] = useState<File | null>(null)
@@ -97,7 +98,6 @@ export default function AddStockPage() {
   const [uploadLoading, setUploadLoading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   
-  const router = useRouter()
   const { toast } = useToast()
   
   const form = useForm<z.infer<typeof formSchema>>({
@@ -115,6 +115,44 @@ export default function AddStockPage() {
       .then(res => res.json())
       .then(data => setAccounts(data))
   }, [])
+
+  // Helper function to parse date input
+  const parseDateInput = (value: string): Date | undefined => {
+    if (!value) return undefined
+    
+    // Try different date formats
+    const formats = [
+      /^(\d{4})-(\d{2})-(\d{2})$/, // YYYY-MM-DD
+      /^(\d{2})\/(\d{2})\/(\d{4})$/, // DD/MM/YYYY
+      /^(\d{2})-(\d{2})-(\d{4})$/, // DD-MM-YYYY
+      /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/, // D/M/YYYY
+    ]
+    
+    for (const format of formats) {
+      const match = value.match(format)
+      if (match) {
+        if (format === formats[0]) {
+          // YYYY-MM-DD
+          return new Date(parseInt(match[1]), parseInt(match[2]) - 1, parseInt(match[3]))
+        } else {
+          // DD/MM/YYYY or DD-MM-YYYY
+          return new Date(parseInt(match[3]), parseInt(match[2]) - 1, parseInt(match[1]))
+        }
+      }
+    }
+    
+    // Try to parse as a natural date
+    const parsed = new Date(value)
+    return isNaN(parsed.getTime()) ? undefined : parsed
+  }
+
+  // Update date when input changes
+  useEffect(() => {
+    const parsed = parseDateInput(dateInput)
+    if (parsed) {
+      form.setValue('date', parsed)
+    }
+  }, [dateInput, form])
 
   const tradeValue = form.watch('quantity') * form.watch('price') || 0
 
@@ -138,8 +176,15 @@ export default function AddStockPage() {
         description: 'Stock transaction added successfully',
       })
       
-      form.reset()
-      router.push('/transactions')
+      // Reset form but don't navigate away
+      form.reset({
+        userid: values.userid, // Keep the same account selected
+        action: 'Buy',
+        brokerage: 0,
+        remarks: '',
+        orderRef: '',
+      })
+      setDateInput('')
     } catch (error) {
       toast({
         title: 'Error',
@@ -175,31 +220,17 @@ export default function AddStockPage() {
     }
   }
 
-  // CSV parsing function
+  // CSV parsing function - updated to not expect headers
   const parseCSV = (text: string): ParsedTransaction[] => {
     const lines = text.trim().split('\n')
-    if (lines.length < 2) return []
+    if (lines.length < 1) return []
 
-    const headers = lines[0].split(',').map(h => h.trim().toLowerCase())
     const data: ParsedTransaction[] = []
 
-    // Expected headers mapping
-    const headerMap = {
-      userid: ['userid', 'user_id', 'account', 'user'],
-      date: ['date', 'transaction_date', 'trade_date'],
-      stock: ['stock', 'symbol', 'stock_symbol'],
-      action: ['action', 'type', 'transaction_type'],
-      source: ['source', 'market'],
-      quantity: ['quantity', 'qty', 'shares'],
-      price: ['price', 'rate', 'share_price'],
-      brokerage: ['brokerage', 'charges', 'fees'],
-      remarks: ['remarks', 'notes', 'comment'],
-      orderRef: ['order_ref', 'orderref', 'reference', 'order_reference']
-    }
-
-    for (let i = 1; i < lines.length; i++) {
+    // Process each line as data (no header row expected)
+    for (let i = 0; i < lines.length; i++) {
       const values = lines[i].split(',').map(v => v.trim())
-      if (values.length < 3) continue // Skip empty/incomplete lines
+      if (values.length < 7) continue // Skip incomplete lines (minimum required fields)
 
       const transaction: ParsedTransaction = {
         userid: '',
@@ -213,46 +244,23 @@ export default function AddStockPage() {
         errors: []
       }
 
-      // Map values to transaction properties
-      Object.entries(headerMap).forEach(([key, possibleHeaders]) => {
-        const headerIndex = headers.findIndex(h => possibleHeaders.includes(h))
-        if (headerIndex !== -1 && values[headerIndex]) {
-          const value = values[headerIndex]
-          
-          switch (key) {
-            case 'userid':
-              transaction.userid = value.toUpperCase()
-              break
-            case 'date':
-              transaction.date = value
-              break
-            case 'stock':
-              transaction.stock = value.toUpperCase()
-              break
-            case 'action':
-              transaction.action = value.toLowerCase() === 'sell' ? 'Sell' : 'Buy'
-              break
-            case 'quantity':
-              transaction.quantity = parseFloat(value) || 0
-              break
-            case 'price':
-              transaction.price = parseFloat(value) || 0
-              break
-            case 'brokerage':
-              transaction.brokerage = parseFloat(value) || 0
-              break
-            case 'source':
-              transaction.source = value
-              break
-            case 'remarks':
-              transaction.remarks = value
-              break
-            case 'orderRef':
-              transaction.orderRef = value
-              break
-          }
-        }
-      })
+      // Map values directly by position
+      // Expected format: userid, date, stock, action, source, quantity, price, brokerage, remarks, orderRef
+      try {
+        transaction.userid = values[0] ? values[0].toUpperCase() : ''
+        transaction.date = values[1] || ''
+        transaction.stock = values[2] ? values[2].toUpperCase() : ''
+        transaction.action = values[3] && values[3].toLowerCase() === 'sell' ? 'Sell' : 'Buy'
+        transaction.source = values[4] || ''
+        transaction.quantity = parseFloat(values[5]) || 0
+        transaction.price = parseFloat(values[6]) || 0
+        transaction.brokerage = parseFloat(values[7]) || 0
+        transaction.remarks = values[8] || ''
+        transaction.orderRef = values[9] || ''
+      } catch (error) {
+        transaction.errors.push('Error parsing row data')
+        transaction.isValid = false
+      }
 
       // Validation
       if (!transaction.userid) {
@@ -339,8 +347,6 @@ export default function AddStockPage() {
       setFile(null)
       setParsedData([])
       setUploadProgress(0)
-      
-      router.push('/transactions')
     } catch (error) {
       toast({
         title: 'Error',
@@ -352,15 +358,14 @@ export default function AddStockPage() {
     }
   }
 
-  // Download sample CSV
+  // Download sample CSV - updated format
   const downloadSampleCSV = () => {
-    const headers = ['userid', 'date', 'stock', 'action', 'source', 'quantity', 'price', 'brokerage', 'remarks', 'order_ref']
     const sampleData = [
       ['GRS', '2024-01-15', 'RELIANCE', 'Buy', 'Demat', '10', '2500.50', '25.00', 'Sample transaction', 'REF001'],
       ['GRS', '2024-01-16', 'TCS', 'Buy', 'Demat', '5', '3200.75', '20.00', 'Another sample', 'REF002']
     ]
     
-    const csvContent = [headers, ...sampleData].map(row => row.join(',')).join('\n')
+    const csvContent = sampleData.map(row => row.join(',')).join('\n')
     const blob = new Blob([csvContent], { type: 'text/csv' })
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -402,7 +407,7 @@ export default function AddStockPage() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Account</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder="Select an account" />
@@ -447,10 +452,23 @@ export default function AddStockPage() {
                             </FormControl>
                           </PopoverTrigger>
                           <PopoverContent className="w-auto p-0" align="start">
+                            <div className="p-3 border-b">
+                              <Input
+                                placeholder="YYYY-MM-DD or DD/MM/YYYY"
+                                value={dateInput}
+                                onChange={(e) => setDateInput(e.target.value)}
+                                className="text-sm"
+                              />
+                            </div>
                             <Calendar
                               mode="single"
                               selected={field.value}
-                              onSelect={field.onChange}
+                              onSelect={(date) => {
+                                field.onChange(date)
+                                if (date) {
+                                  setDateInput(format(date, 'yyyy-MM-dd'))
+                                }
+                              }}
                               disabled={(date) =>
                                 date > new Date() || date < new Date("1900-01-01")
                               }
@@ -484,7 +502,7 @@ export default function AddStockPage() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Transaction Type</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <Select onValueChange={field.onChange} value={field.value}>
                             <FormControl>
                               <SelectTrigger>
                                 <SelectValue />
@@ -603,13 +621,6 @@ export default function AddStockPage() {
                       {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                       Add Transaction
                     </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => router.push('/')}
-                    >
-                      Cancel
-                    </Button>
                   </div>
                 </form>
               </Form>
@@ -625,13 +636,18 @@ export default function AddStockPage() {
                       Upload multiple transactions at once using a CSV or Excel file
                     </p>
                   </div>
+                  <Button variant="outline" onClick={downloadSampleCSV}>
+                    <Download className="mr-2 h-4 w-4" />
+                    Download Sample
+                  </Button>
                 </div>
 
                 <Alert>
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
-                    Your CSV file should include columns: userid, date, stock, action, source, quantity, price, brokerage, remarks, order_ref.
-                    Date format should be YYYY-MM-DD or DD/MM/YYYY.
+                    <strong>CSV Format (no headers required):</strong><br />
+                    Each row should contain: userid, date, stock, action, source, quantity, price, brokerage, remarks, orderRef<br />
+                    <strong>Example:</strong> GRS,2024-01-15,RELIANCE,Buy,Demat,10,2500.50,25.00,Sample transaction,REF001
                   </AlertDescription>
                 </Alert>
 
@@ -644,7 +660,7 @@ export default function AddStockPage() {
                   />
                 </div>
 
-                {uploadLoading && (
+                {uploadLoading && !parsedData.length && (
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -671,40 +687,40 @@ export default function AddStockPage() {
                     <div className="border rounded-lg max-h-96 overflow-auto">
                       <Table>
                         <TableHeader>
-                          <TableRow>
-                            <TableHead className="w-12">Status</TableHead>
-                            <TableHead>User ID</TableHead>
-                            <TableHead>Date</TableHead>
-                            <TableHead>Stock</TableHead>
-                            <TableHead>Action</TableHead>
-                            <TableHead className="text-right">Quantity</TableHead>
-                            <TableHead className="text-right">Price</TableHead>
-                            <TableHead className="text-right">Trade Value</TableHead>
-                            <TableHead>Errors</TableHead>
+                          <TableRow className="h-10">
+                            <TableHead className="w-12 py-2">Status</TableHead>
+                            <TableHead className="py-2">User ID</TableHead>
+                            <TableHead className="py-2">Date</TableHead>
+                            <TableHead className="py-2">Stock</TableHead>
+                            <TableHead className="py-2">Action</TableHead>
+                            <TableHead className="text-right py-2">Quantity</TableHead>
+                            <TableHead className="text-right py-2">Price</TableHead>
+                            <TableHead className="text-right py-2">Trade Value</TableHead>
+                            <TableHead className="py-2">Errors</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {parsedData.map((transaction, index) => (
-                            <TableRow key={index}>
-                              <TableCell>
+                            <TableRow key={index} className="h-8">
+                              <TableCell className="py-1">
                                 {transaction.isValid ? (
                                   <Check className="h-4 w-4 text-green-600" />
                                 ) : (
                                   <X className="h-4 w-4 text-red-600" />
                                 )}
                               </TableCell>
-                              <TableCell>{transaction.userid}</TableCell>
-                              <TableCell>{transaction.date}</TableCell>
-                              <TableCell>{transaction.stock}</TableCell>
-                              <TableCell>
+                              <TableCell className="py-1">{transaction.userid}</TableCell>
+                              <TableCell className="py-1">{transaction.date}</TableCell>
+                              <TableCell className="py-1">{transaction.stock}</TableCell>
+                              <TableCell className="py-1">
                                 <Badge variant={transaction.action === 'Buy' ? 'default' : 'secondary'}>
                                   {transaction.action}
                                 </Badge>
                               </TableCell>
-                              <TableCell className="text-right">{transaction.quantity}</TableCell>
-                              <TableCell className="text-right">{formatCurrency(transaction.price)}</TableCell>
-                              <TableCell className="text-right">{formatCurrency(transaction.tradeValue || 0)}</TableCell>
-                              <TableCell>
+                              <TableCell className="text-right py-1">{transaction.quantity}</TableCell>
+                              <TableCell className="text-right py-1">{formatCurrency(transaction.price)}</TableCell>
+                              <TableCell className="text-right py-1">{formatCurrency(transaction.tradeValue || 0)}</TableCell>
+                              <TableCell className="py-1">
                                 {transaction.errors.length > 0 && (
                                   <div className="text-xs text-red-600">
                                     {transaction.errors.join(', ')}
