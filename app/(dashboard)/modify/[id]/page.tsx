@@ -41,6 +41,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/use-toast'
 import { formatCurrency } from '@/lib/utils'
 import { EnhancedDatePicker } from '@/components/ui/enhanced-date-picker'
+import { useAccounts } from '@/components/providers/accounts-provider'
 
 const formSchema = z.object({
   userid: z.string().min(1, 'Account is required'),
@@ -58,7 +59,7 @@ const formSchema = z.object({
 })
 
 export default function ModifyStockPage({ params }: { params: { id: string } }) {
-  const [accounts, setAccounts] = useState<any[]>([])
+  const { accounts, loading: accountsLoading } = useAccounts() // Use all accounts for modify page
   const [loading, setLoading] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [dataLoading, setDataLoading] = useState(true)
@@ -81,21 +82,8 @@ export default function ModifyStockPage({ params }: { params: { id: string } }) 
   })
 
   useEffect(() => {
-    fetchAccounts()
     fetchStock()
   }, [params.id])
-
-  const fetchAccounts = async () => {
-    try {
-      const response = await fetch('/api/accounts/active') // Changed from '/api/accounts'
-      const data = await response.json()
-      if (Array.isArray(data)) {
-        setAccounts(data)
-      }
-    } catch (error) {
-      console.error('Failed to fetch accounts:', error)
-    }
-  }
 
   const fetchStock = async () => {
     try {
@@ -223,15 +211,26 @@ export default function ModifyStockPage({ params }: { params: { id: string } }) 
                     <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select an account" />
+                          <SelectValue placeholder={accountsLoading ? "Loading..." : "Select an account"} />
                         </SelectTrigger>
                       </FormControl>
-                      <SelectContent>
-                        {accounts.map((account) => (
-                          <SelectItem key={account.userid} value={account.userid}>
-                            {account.userid} - {account.name}
-                          </SelectItem>
-                        ))}
+                      <SelectContent className="max-h-60 overflow-y-auto">
+                        {accountsLoading ? (
+                          <div className="flex items-center justify-center py-4">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            <span className="ml-2 text-sm">Loading accounts...</span>
+                          </div>
+                        ) : accounts.length === 0 ? (
+                          <div className="py-4 text-center text-sm text-muted-foreground">
+                            No accounts found
+                          </div>
+                        ) : (
+                          accounts.map((account) => (
+                            <SelectItem key={account.userid} value={account.userid}>
+                              {account.userid} - {account.name} {!account.active && '(Inactive)'}
+                            </SelectItem>
+                          ))
+                        )}
                       </SelectContent>
                     </Select>
                     <FormMessage />

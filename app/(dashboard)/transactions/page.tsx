@@ -16,7 +16,7 @@ import {
   ColumnFiltersState,
   FilterFn,
 } from '@tanstack/react-table'
-import { ArrowUpDown, Download, Edit2 } from 'lucide-react'
+import { ArrowUpDown, Download, Edit2, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -51,6 +51,7 @@ import { Badge } from '@/components/ui/badge'
 import { formatCurrency } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { EnhancedDatePicker } from '@/components/ui/enhanced-date-picker'
+import { useAccounts } from '@/components/providers/accounts-provider'
 
 type Transaction = {
   id: number
@@ -102,15 +103,15 @@ const accountFilter: FilterFn<Transaction> = (row, columnId, filterValue) => {
 }
 
 export default function TransactionsPage() {
+  const { activeAccounts, loading: accountsLoading } = useAccounts()
   const [data, setData] = useState<Transaction[]>([])
-  const [accounts, setAccounts] = useState<any[]>([])
-  const [loading, setLoading] = useState(false) // Changed from true
+  const [loading, setLoading] = useState(false)
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const router = useRouter()
   
   // Add state for manual filters
-  const [accountFilter, setAccountFilter] = useState<string>('') // Changed from 'all'
+  const [accountFilter, setAccountFilter] = useState<string>('')
   const [actionFilter, setActionFilter] = useState<string>('all')
   const [stockFilter, setStockFilter] = useState<string>('')
   const [stockSearchOpen, setStockSearchOpen] = useState(false)
@@ -288,10 +289,6 @@ export default function TransactionsPage() {
     return filtered
   }, [data, accountFilter, actionFilter, stockFilter, dateFrom, dateTo])
 
-  useEffect(() => {
-    fetchAccounts()
-  }, [])
-
   // Only fetch data when account is selected
   useEffect(() => {
     if (accountFilter) {
@@ -324,26 +321,6 @@ export default function TransactionsPage() {
       setData([])
     } finally {
       setLoading(false)
-    }
-  }
-
-  const fetchAccounts = async () => {
-    try {
-      const response = await fetch('/api/accounts/active') // Changed from '/api/accounts'
-      if (!response.ok) {
-        console.error('Failed to fetch accounts:', response.status)
-        setAccounts([])
-        return
-      }
-      const result = await response.json()
-      if (Array.isArray(result)) {
-        setAccounts(result)
-      } else {
-        setAccounts([])
-      }
-    } catch (error) {
-      console.error('Failed to fetch accounts:', error)
-      setAccounts([])
     }
   }
 
@@ -518,8 +495,8 @@ export default function TransactionsPage() {
           {accountFilter && (
             <p className="text-sm text-muted-foreground mt-1">
               {accountFilter === 'all' 
-                ? `Showing transactions from ${accounts.length} accounts`
-                : `Showing transactions for ${accounts.find(acc => acc.userid === accountFilter)?.name || accountFilter}`
+                ? `Showing transactions from ${activeAccounts.length} accounts`
+                : `Showing transactions for ${activeAccounts.find(acc => acc.userid === accountFilter)?.name || accountFilter}`
               }
             </p>
           )}
@@ -538,15 +515,28 @@ export default function TransactionsPage() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Select value={accountFilter} onValueChange={setAccountFilter}>
               <SelectTrigger>
-                <SelectValue placeholder="Select Account" />
+                <SelectValue placeholder={accountsLoading ? "Loading..." : "Select Account"} />
               </SelectTrigger>
               <SelectContent className="max-h-60 overflow-y-auto">
-                {accounts.map((account) => (
-                  <SelectItem key={account.userid} value={account.userid}>
-                    {account.userid} - {account.name}
-                  </SelectItem>
-                ))}
-                <SelectItem value="all">All Accounts</SelectItem>
+                {accountsLoading ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="ml-2 text-sm">Loading accounts...</span>
+                  </div>
+                ) : activeAccounts.length === 0 ? (
+                  <div className="py-4 text-center text-sm text-muted-foreground">
+                    No active accounts found
+                  </div>
+                ) : (
+                  <>
+                    {activeAccounts.map((account) => (
+                      <SelectItem key={account.userid} value={account.userid}>
+                        {account.userid} - {account.name}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value="all">All Active Accounts</SelectItem>
+                  </>
+                )}
               </SelectContent>
             </Select>
 

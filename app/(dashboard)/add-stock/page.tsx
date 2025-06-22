@@ -48,6 +48,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { EnhancedDatePicker } from '@/components/ui/enhanced-date-picker'
+import { useAccounts } from '@/components/providers/accounts-provider'
 
 const formSchema = z.object({
   userid: z.string().min(1, 'Account is required'),
@@ -81,7 +82,7 @@ interface ParsedTransaction {
 }
 
 export default function AddStockPage() {
-  const [accounts, setAccounts] = useState([])
+  const { activeAccounts, loading: accountsLoading } = useAccounts()
   const [loading, setLoading] = useState(false)
   const [activeTab, setActiveTab] = useState('single')
   
@@ -103,12 +104,6 @@ export default function AddStockPage() {
       orderRef: '',
     },
   })
-
-  useEffect(() => {
-    fetch('/api/accounts/active')
-      .then(res => res.json())
-      .then(data => setAccounts(data))
-  }, [])
 
   const tradeValue = form.watch('quantity') * form.watch('price') || 0
 
@@ -158,7 +153,6 @@ export default function AddStockPage() {
       setLoading(false)
     }
   }
-
 
   // File upload handler
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -376,15 +370,26 @@ export default function AddStockPage() {
                           <Select onValueChange={field.onChange} value={field.value}>
                             <FormControl>
                               <SelectTrigger>
-                                <SelectValue placeholder="Select account" />
+                                <SelectValue placeholder={accountsLoading ? "Loading..." : "Select account"} />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent className="max-h-60 overflow-y-auto">
-                              {accounts.map((account: any) => (
-                                <SelectItem key={account.userid} value={account.userid}>
-                                  {account.userid} - {account.name}
-                                </SelectItem>
-                              ))}
+                              {accountsLoading ? (
+                                <div className="flex items-center justify-center py-4">
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                  <span className="ml-2 text-sm">Loading accounts...</span>
+                                </div>
+                              ) : activeAccounts.length === 0 ? (
+                                <div className="py-4 text-center text-sm text-muted-foreground">
+                                  No active accounts found
+                                </div>
+                              ) : (
+                                activeAccounts.map((account) => (
+                                  <SelectItem key={account.userid} value={account.userid}>
+                                    {account.userid} - {account.name}
+                                  </SelectItem>
+                                ))
+                              )}
                             </SelectContent>
                           </Select>
                           <FormMessage />
@@ -562,7 +567,7 @@ export default function AddStockPage() {
                       )}
                     </div>
 
-                    <Button type="submit" disabled={loading} className="min-w-[140px]">
+                    <Button type="submit" disabled={loading || accountsLoading} className="min-w-[140px]">
                       {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                       Add Transaction
                     </Button>
