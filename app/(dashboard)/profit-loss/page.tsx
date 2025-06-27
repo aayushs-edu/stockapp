@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { format } from 'date-fns'
-import { ChevronDown, ChevronRight, Download, TrendingUp, TrendingDown, Loader2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Download, TrendingUp, TrendingDown, Loader2, Calendar, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -111,11 +111,26 @@ const PLDisplay = ({ value, percent, showPercent = true }: { value: number, perc
   )
 }
 
+// Helper function to calculate holding period in days
+const calculateHoldingPeriod = (buyDate: string, sellDate: string): number => {
+  const buy = new Date(buyDate)
+  const sell = new Date(sellDate)
+  const diffTime = Math.abs(sell.getTime() - buy.getTime())
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+  return diffDays
+}
+
+// Custom filter function for account filtering
+const accountFilterFn = (row: { original: Transaction }, columnId: string, filterValue: string) => {
+  return row.original.userid === filterValue
+}
+
 export default function ProfitLossPage() {
   const { accounts, activeAccounts, loading: accountsLoading } = useAccounts()
   const [data, setData] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(false)
   const [accountFilter, setAccountFilter] = useState<string>('')
+  const [actionFilter, setActionFilter] = useState<string>('all')
   const [stockFilter, setStockFilter] = useState<string>('')
   const [stockSearchOpen, setStockSearchOpen] = useState(false)
   const [stockSearchValue, setStockSearchValue] = useState('')
@@ -438,13 +453,15 @@ export default function ProfitLossPage() {
 
   const exportToCSV = () => {
     const csvRows = []
-    const headers = ['Stock', 'Account', 'Sell Date', 'Sell Qty', 'Sell Price', 'Sell Value', 'Buy Date', 'Buy Qty', 'Buy Price', 'Matched Qty', 'Cost Basis', 'P/L', 'P/L %']
+    const headers = ['Stock', 'Account', 'Sell Date', 'Sell Qty', 'Sell Price', 'Sell Value', 'Buy Date', 'Buy Qty', 'Buy Price', 'Matched Qty', 'Cost Basis', 'P/L', 'P/L %', 'Term']
     csvRows.push(headers.join(','))
 
     stockPnLData.forEach(stock => {
       stock.accounts.forEach(account => {
         account.sellsWithMatches.forEach(sellMatch => {
           sellMatch.matchedBuys.forEach(buy => {
+            const holdingDays = calculateHoldingPeriod(buy.date, sellMatch.sell.date)
+            const term = holdingDays >= 365 ? 'Long Term' : 'Short Term'
             const row = [
               stock.stock,
               account.userid,
@@ -458,7 +475,8 @@ export default function ProfitLossPage() {
               buy.matchedQuantity,
               buy.matchedQuantity * buy.price,
               sellMatch.profitLoss,
-              sellMatch.profitLossPercent.toFixed(2)
+              sellMatch.profitLossPercent.toFixed(2),
+              term
             ]
             csvRows.push(row.join(','))
           })
@@ -775,7 +793,7 @@ export default function ProfitLossPage() {
                   <TableHead className="text-right bg-green-50 dark:bg-green-950/20">
                     <span className="text-green-700 dark:text-green-300 font-semibold">Realized P/L</span>
                   </TableHead>
-                  <TableHead className="text-right">P/L %</TableHead>
+                  <TableHead className="text-right py-1">P/L %</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -868,6 +886,7 @@ export default function ProfitLossPage() {
                                       <TableHeader>
                                         <TableRow className="h-8">
                                           <TableHead className="w-16 py-1">Sell ID</TableHead>
+                                          <TableHead className="py-1">Stock</TableHead>
                                           <TableHead className="py-1">Sell Date</TableHead>
                                           <TableHead className="text-right py-1">Sell Qty</TableHead>
                                           <TableHead className="text-right py-1">Sell Price</TableHead>
@@ -876,6 +895,7 @@ export default function ProfitLossPage() {
                                           <TableHead className="text-right py-1">Match Qty</TableHead>
                                           <TableHead className="text-right py-1">Buy Price</TableHead>
                                           <TableHead className="py-1">Method</TableHead>
+                                          <TableHead className="py-1">Term</TableHead>
                                           <TableHead className="text-right py-1">Cost Basis</TableHead>
                                           <TableHead className="text-right py-1">Sell Value</TableHead>
                                           <TableHead className="text-right py-1">P/L</TableHead>
@@ -896,6 +916,10 @@ export default function ProfitLossPage() {
                                             const matchPnL = matchedSellValue - costBasis
                                             const matchPnLPercent = costBasis > 0 ? (matchPnL / costBasis) * 100 : 0
                                             
+                                            // Calculate holding period and determine term
+                                            const holdingDays = calculateHoldingPeriod(buy.date, sellMatch.sell.date)
+                                            const isLongTerm = holdingDays >= 365
+                                            
                                             return (
                                               <TableRow 
                                                 key={`${sellMatch.sell.id}-buy-${buy.id}-${buyIdx}`} 
@@ -907,6 +931,9 @@ export default function ProfitLossPage() {
                                               >
                                                 <TableCell className="font-mono text-xs py-1">
                                                   #{sellMatch.sell.id}
+                                                </TableCell>
+                                                <TableCell className="py-1 text-xs font-semibold">
+                                                  {sellMatch.sell.stock}
                                                 </TableCell>
                                                 <TableCell className="py-1 text-xs">
                                                   {format(new Date(sellMatch.sell.date), 'dd-MMM-yy')}
@@ -931,9 +958,34 @@ export default function ProfitLossPage() {
                                                 </TableCell>
                                                 <TableCell className="py-1">
                                                   {isIntradayBuy ? (
-                                                    <Badge variant="outline" className="text-xs">LIFO</Badge>
+                                                    <Badge variant="outline" className="text-xs">Intraday</Badge>
                                                   ) : (
-                                                    <Badge variant="outline" className="text-xs">FIFO</Badge>
+                                                    <span className="text-xs">&nbsp;</span>
+                                                  )}
+                                                </TableCell>
+                                                <TableCell className="py-1">
+                                                  {isLongTerm ? (
+                                                    <Badge 
+                                                      className={cn(
+                                                        "text-xs flex items-center gap-1",
+                                                        "bg-purple-100 text-purple-800 hover:bg-purple-200",
+                                                        "dark:bg-purple-900/20 dark:text-purple-300 dark:hover:bg-purple-900/30"
+                                                      )}
+                                                    >
+                                                      <Calendar className="h-3 w-3" />
+                                                      LTG
+                                                    </Badge>
+                                                  ) : (
+                                                    <Badge 
+                                                      className={cn(
+                                                        "text-xs flex items-center gap-1",
+                                                        "bg-orange-100 text-orange-800 hover:bg-orange-200",
+                                                        "dark:bg-orange-900/20 dark:text-orange-300 dark:hover:bg-orange-900/30"
+                                                      )}
+                                                    >
+                                                      <Clock className="h-3 w-3" />
+                                                      STG
+                                                    </Badge>
                                                   )}
                                                 </TableCell>
                                                 <TableCell className="text-right py-1 text-xs">
