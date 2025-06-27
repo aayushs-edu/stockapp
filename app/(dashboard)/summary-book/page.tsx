@@ -927,9 +927,14 @@ export default function SummaryBookPage() {
                                               : transaction.tradeValue - transaction.brokerage
                                             
                                             // Check if this transaction contains remaining shares
-                                            const isRemainingTransaction = account.remainingTransactions?.some(
+                                            const remainingTransaction = account.remainingTransactions?.find(
                                               remainingTx => remainingTx.id === transaction.id
                                             )
+                                            const isRemainingTransaction = !!remainingTransaction
+                                            const isFullySold = transaction.action === 'Buy' && !isRemainingTransaction
+                                            const isPartiallySold = transaction.action === 'Buy' && 
+                                              remainingTransaction && 
+                                              remainingTransaction.quantity < transaction.quantity
                                             
                                             return (
                                               <TableRow 
@@ -937,13 +942,22 @@ export default function SummaryBookPage() {
                                                 className={cn(
                                                   "hover:bg-muted/30 h-8",
                                                   isRemainingTransaction && transaction.action === 'Buy' && 
-                                                  "bg-blue-50 dark:bg-blue-950/30 border-l-2 border-blue-500"
+                                                  "bg-blue-50 dark:bg-blue-950/30 border-l-2 border-blue-500",
+                                                  isFullySold && "opacity-50"
                                                 )}
                                               >
                                                 <TableCell className="font-mono text-xs py-1">
                                                   #{transaction.id}
                                                   {isRemainingTransaction && transaction.action === 'Buy' && (
-                                                    <div className="text-blue-600 dark:text-blue-400 text-[10px]">HOLDING</div>
+                                                    <div className="text-blue-600 dark:text-blue-400 text-[10px]">
+                                                      {isPartiallySold 
+                                                        ? `${remainingTransaction.quantity}/${transaction.quantity} LEFT`
+                                                        : 'HOLDING'
+                                                      }
+                                                    </div>
+                                                  )}
+                                                  {isFullySold && (
+                                                    <div className="text-gray-500 text-[10px]">SOLD</div>
                                                   )}
                                                 </TableCell>
                                                 <TableCell className="py-1">{format(new Date(transaction.date), 'dd-MMM-yy')}</TableCell>
