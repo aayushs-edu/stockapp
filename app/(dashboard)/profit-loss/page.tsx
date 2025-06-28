@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { format } from 'date-fns'
-import { ChevronDown, ChevronRight, Download, TrendingUp, TrendingDown, Loader2, Calendar, Clock } from 'lucide-react'
+import { Download, TrendingUp, TrendingDown, Loader2, Calendar, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -63,33 +63,26 @@ type MatchedBuy = {
   remarks: string | null
 }
 
-type SellWithMatches = {
-  sell: Transaction
-  matchedBuys: MatchedBuy[]
-  totalCostBasis: number
-  profitLoss: number
-  profitLossPercent: number
-}
-
-type AccountPnL = {
-  userid: string
-  name: string
-  totalSellQty: number
-  totalSellValue: number
-  totalCostBasis: number
-  totalPnL: number
-  totalPnLPercent: number
-  sellsWithMatches: SellWithMatches[]
-}
-
-type StockPnL = {
+type FlattenedPnLRow = {
   stock: string
-  totalSellQty: number
-  totalSellValue: number
-  totalCostBasis: number
-  totalPnL: number
-  totalPnLPercent: number
-  accounts: AccountPnL[]
+  account: string
+  accountName: string
+  sellId: number
+  sellDate: string
+  sellQty: number
+  sellPrice: number
+  sellValue: number
+  buyId: number
+  buyDate: string
+  buyQty: number
+  buyPrice: number
+  matchedQty: number
+  costBasis: number
+  pnl: number
+  pnlPercent: number
+  holdingDays: number
+  isLongTerm: boolean
+  isIntraday: boolean
 }
 
 // Helper component for P/L display
@@ -120,23 +113,15 @@ const calculateHoldingPeriod = (buyDate: string, sellDate: string): number => {
   return diffDays
 }
 
-// Custom filter function for account filtering
-const accountFilterFn = (row: { original: Transaction }, columnId: string, filterValue: string) => {
-  return row.original.userid === filterValue
-}
-
 export default function ProfitLossPage() {
   const { accounts, activeAccounts, loading: accountsLoading } = useAccounts()
   const [data, setData] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(false)
   const [accountFilter, setAccountFilter] = useState<string>('')
-  const [actionFilter, setActionFilter] = useState<string>('all')
   const [stockFilter, setStockFilter] = useState<string>('')
   const [stockSearchOpen, setStockSearchOpen] = useState(false)
   const [stockSearchValue, setStockSearchValue] = useState('')
   const [yearFilter, setYearFilter] = useState<string>('all')
-  const [expandedStocks, setExpandedStocks] = useState<Set<string>>(new Set())
-  const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set())
 
   // Get unique stocks for autocomplete
   const uniqueStocks = useMemo(() => {
@@ -181,112 +166,9 @@ export default function ProfitLossPage() {
     }
   }
 
-  // Match sells with buys using FIFO/LIFO logic
-  const matchSellsWithBuys = (transactions: Transaction[]): SellWithMatches[] => {
-    // Sort transactions by date
-    const sortedTransactions = [...transactions].sort((a, b) => 
-      new Date(a.date).getTime() - new Date(b.date).getTime()
-    )
-
-    const sells = sortedTransactions.filter(t => t.action === 'Sell')
-    const buys = sortedTransactions.filter(t => t.action === 'Buy')
-    
-    const sellsWithMatches: SellWithMatches[] = []
-    const remainingBuys = buys.map(buy => ({
-      ...buy,
-      remainingQty: buy.quantity
-    }))
-
-    for (const sell of sells) {
-      const sellDate = new Date(sell.date)
-      const matchedBuys: MatchedBuy[] = []
-      let remainingSellQty = sell.quantity
-      let totalCostBasis = 0
-
-      // Check if this is an intraday sell (LIFO)
-      const intradayBuys = remainingBuys.filter(buy => 
-        new Date(buy.date).toDateString() === sellDate.toDateString() && 
-        buy.remainingQty > 0
-      ).reverse() // Reverse for LIFO
-
-      // First, match with intraday buys (LIFO)
-      for (const buy of intradayBuys) {
-        if (remainingSellQty <= 0) break
-        
-        const matchQty = Math.min(remainingSellQty, buy.remainingQty)
-        if (matchQty > 0) {
-          const costBasis = matchQty * buy.price + (buy.brokerage * matchQty / buy.quantity)
-          totalCostBasis += costBasis
-          
-          matchedBuys.push({
-            id: buy.id,
-            date: buy.date,
-            quantity: buy.quantity,
-            price: buy.price,
-            matchedQuantity: matchQty,
-            tradeValue: buy.tradeValue,
-            brokerage: buy.brokerage,
-            source: buy.source,
-            remarks: buy.remarks
-          })
-          
-          buy.remainingQty -= matchQty
-          remainingSellQty -= matchQty
-        }
-      }
-
-      // Then, match with older buys (FIFO) if any quantity remains
-      if (remainingSellQty > 0) {
-        const olderBuys = remainingBuys.filter(buy => 
-          new Date(buy.date) < sellDate && 
-          buy.remainingQty > 0
-        )
-
-        for (const buy of olderBuys) {
-          if (remainingSellQty <= 0) break
-          
-          const matchQty = Math.min(remainingSellQty, buy.remainingQty)
-          if (matchQty > 0) {
-            const costBasis = matchQty * buy.price + (buy.brokerage * matchQty / buy.quantity)
-            totalCostBasis += costBasis
-            
-            matchedBuys.push({
-              id: buy.id,
-              date: buy.date,
-              quantity: buy.quantity,
-              price: buy.price,
-              matchedQuantity: matchQty,
-              tradeValue: buy.tradeValue,
-              brokerage: buy.brokerage,
-              source: buy.source,
-              remarks: buy.remarks
-            })
-            
-            buy.remainingQty -= matchQty
-            remainingSellQty -= matchQty
-          }
-        }
-      }
-
-      const sellValue = sell.tradeValue - sell.brokerage
-      const profitLoss = sellValue - totalCostBasis
-      const profitLossPercent = totalCostBasis > 0 ? (profitLoss / totalCostBasis) * 100 : 0
-
-      sellsWithMatches.push({
-        sell,
-        matchedBuys,
-        totalCostBasis,
-        profitLoss,
-        profitLossPercent
-      })
-    }
-
-    return sellsWithMatches
-  }
-
-  // Process data into hierarchical structure
-  const stockPnLData = useMemo(() => {
-    const pnlMap = new Map<string, StockPnL>()
+  // Match sells with buys using FIFO/LIFO logic and flatten the structure
+  const flattenedPnLData = useMemo(() => {
+    const rows: FlattenedPnLRow[] = []
     
     // Filter data by year first
     let filteredData = data
@@ -295,193 +177,181 @@ export default function ProfitLossPage() {
       filteredData = filteredData.filter(t => new Date(t.date).getFullYear() === year)
     }
     
-    // Group transactions by stock and account
-    filteredData.forEach(transaction => {
-      if (transaction.action !== 'Sell') return // Only process sells for P&L
-      
-      let stockPnL = pnlMap.get(transaction.stock)
-      if (!stockPnL) {
-        stockPnL = {
-          stock: transaction.stock,
-          totalSellQty: 0,
-          totalSellValue: 0,
-          totalCostBasis: 0,
-          totalPnL: 0,
-          totalPnLPercent: 0,
-          accounts: []
-        }
-        pnlMap.set(transaction.stock, stockPnL)
-      }
-    })
-
-    // Process each stock
-    pnlMap.forEach((stockPnL, stock) => {
-      // Get all transactions for this stock
-      const stockTransactions = filteredData.filter(t => t.stock === stock)
-      
-      // Group by account
-      const accountGroups = new Map<string, Transaction[]>()
-      stockTransactions.forEach(t => {
-        const key = t.userid
-        if (!accountGroups.has(key)) {
-          accountGroups.set(key, [])
-        }
-        accountGroups.get(key)!.push(t)
-      })
-
-      // Process each account
-      accountGroups.forEach((transactions, userid) => {
-        const account = accounts.find(a => a.userid === userid)
-        const sellsWithMatches = matchSellsWithBuys(transactions)
-        
-        if (sellsWithMatches.length > 0) {
-          const accountPnL: AccountPnL = {
-            userid,
-            name: account?.name || userid,
-            totalSellQty: sellsWithMatches.reduce((sum, s) => sum + s.sell.quantity, 0),
-            totalSellValue: sellsWithMatches.reduce((sum, s) => sum + s.sell.tradeValue - s.sell.brokerage, 0),
-            totalCostBasis: sellsWithMatches.reduce((sum, s) => sum + s.totalCostBasis, 0),
-            totalPnL: sellsWithMatches.reduce((sum, s) => sum + s.profitLoss, 0),
-            totalPnLPercent: 0,
-            sellsWithMatches: sellsWithMatches.sort((a, b) => 
-              new Date(b.sell.date).getTime() - new Date(a.sell.date).getTime()
-            )
-          }
-          
-          accountPnL.totalPnLPercent = accountPnL.totalCostBasis > 0 
-            ? (accountPnL.totalPnL / accountPnL.totalCostBasis) * 100 
-            : 0
-
-          stockPnL.accounts.push(accountPnL)
-          
-          // Update stock totals
-          stockPnL.totalSellQty += accountPnL.totalSellQty
-          stockPnL.totalSellValue += accountPnL.totalSellValue
-          stockPnL.totalCostBasis += accountPnL.totalCostBasis
-          stockPnL.totalPnL += accountPnL.totalPnL
-        }
-      })
-
-      stockPnL.totalPnLPercent = stockPnL.totalCostBasis > 0 
-        ? (stockPnL.totalPnL / stockPnL.totalCostBasis) * 100 
-        : 0
-    })
-
-    // Convert to array and filter
-    let summaries = Array.from(pnlMap.values()).filter(stock => stock.accounts.length > 0)
-    
-    // Apply filters
-    if (accountFilter && accountFilter !== 'all-accounts' && accountFilter !== 'active-accounts') {
-      summaries = summaries.map(stock => ({
-        ...stock,
-        accounts: stock.accounts.filter(account => account.userid === accountFilter)
-      })).filter(stock => stock.accounts.length > 0)
-      
-      // Recalculate stock totals
-      summaries = summaries.map(stock => {
-        const totalSellQty = stock.accounts.reduce((sum, acc) => sum + acc.totalSellQty, 0)
-        const totalSellValue = stock.accounts.reduce((sum, acc) => sum + acc.totalSellValue, 0)
-        const totalCostBasis = stock.accounts.reduce((sum, acc) => sum + acc.totalCostBasis, 0)
-        const totalPnL = stock.accounts.reduce((sum, acc) => sum + acc.totalPnL, 0)
-        
-        return {
-          ...stock,
-          totalSellQty,
-          totalSellValue,
-          totalCostBasis,
-          totalPnL,
-          totalPnLPercent: totalCostBasis > 0 ? (totalPnL / totalCostBasis) * 100 : 0
-        }
-      })
+    // Apply account filter
+    let accountsToProcess: string[] = []
+    if (accountFilter === 'all-accounts') {
+      accountsToProcess = Array.from(new Set(filteredData.map(t => t.userid)))
     } else if (accountFilter === 'active-accounts') {
       const activeAccountIds = new Set(activeAccounts.map(acc => acc.userid))
-      summaries = summaries.map(stock => ({
-        ...stock,
-        accounts: stock.accounts.filter(account => activeAccountIds.has(account.userid))
-      })).filter(stock => stock.accounts.length > 0)
+      accountsToProcess = Array.from(new Set(filteredData.map(t => t.userid))).filter(id => activeAccountIds.has(id))
+    } else if (accountFilter) {
+      accountsToProcess = [accountFilter]
+    }
+    
+    // Process each account and stock combination
+    accountsToProcess.forEach(userid => {
+      const accountData = accounts.find(a => a.userid === userid)
+      const accountTransactions = filteredData.filter(t => t.userid === userid)
       
-      // Recalculate stock totals
-      summaries = summaries.map(stock => {
-        const totalSellQty = stock.accounts.reduce((sum, acc) => sum + acc.totalSellQty, 0)
-        const totalSellValue = stock.accounts.reduce((sum, acc) => sum + acc.totalSellValue, 0)
-        const totalCostBasis = stock.accounts.reduce((sum, acc) => sum + acc.totalCostBasis, 0)
-        const totalPnL = stock.accounts.reduce((sum, acc) => sum + acc.totalPnL, 0)
+      // Group by stock
+      const stockGroups = new Map<string, Transaction[]>()
+      accountTransactions.forEach(t => {
+        if (!stockGroups.has(t.stock)) {
+          stockGroups.set(t.stock, [])
+        }
+        stockGroups.get(t.stock)!.push(t)
+      })
+      
+      // Process each stock
+      stockGroups.forEach((transactions, stock) => {
+        // Apply stock filter
+        if (stockFilter && stock !== stockFilter) return
         
-        return {
-          ...stock,
-          totalSellQty,
-          totalSellValue,
-          totalCostBasis,
-          totalPnL,
-          totalPnLPercent: totalCostBasis > 0 ? (totalPnL / totalCostBasis) * 100 : 0
+        // Sort transactions by date
+        const sortedTransactions = [...transactions].sort((a, b) => 
+          new Date(a.date).getTime() - new Date(b.date).getTime()
+        )
+        
+        const sells = sortedTransactions.filter(t => t.action === 'Sell')
+        const buys = sortedTransactions.filter(t => t.action === 'Buy')
+        
+        const remainingBuys = buys.map(buy => ({
+          ...buy,
+          remainingQty: buy.quantity
+        }))
+        
+        for (const sell of sells) {
+          const sellDate = new Date(sell.date)
+          let remainingSellQty = sell.quantity
+          
+          // Check if this is an intraday sell (LIFO)
+          const intradayBuys = remainingBuys.filter(buy => 
+            new Date(buy.date).toDateString() === sellDate.toDateString() && 
+            buy.remainingQty > 0
+          ).reverse() // Reverse for LIFO
+          
+          // First, match with intraday buys (LIFO)
+          for (const buy of intradayBuys) {
+            if (remainingSellQty <= 0) break
+            
+            const matchQty = Math.min(remainingSellQty, buy.remainingQty)
+            if (matchQty > 0) {
+              const costBasis = matchQty * buy.price + (buy.brokerage * matchQty / buy.quantity)
+              const sellValue = matchQty * sell.price - (sell.brokerage * matchQty / sell.quantity)
+              const pnl = sellValue - costBasis
+              const pnlPercent = costBasis > 0 ? (pnl / costBasis) * 100 : 0
+              const holdingDays = calculateHoldingPeriod(buy.date, sell.date)
+              
+              rows.push({
+                stock,
+                account: userid,
+                accountName: accountData?.name || userid,
+                sellId: sell.id,
+                sellDate: sell.date,
+                sellQty: sell.quantity,
+                sellPrice: sell.price,
+                sellValue,
+                buyId: buy.id,
+                buyDate: buy.date,
+                buyQty: buy.quantity,
+                buyPrice: buy.price,
+                matchedQty: matchQty,
+                costBasis,
+                pnl,
+                pnlPercent,
+                holdingDays,
+                isLongTerm: holdingDays >= 365,
+                isIntraday: true
+              })
+              
+              buy.remainingQty -= matchQty
+              remainingSellQty -= matchQty
+            }
+          }
+          
+          // Then, match with older buys (FIFO) if any quantity remains
+          if (remainingSellQty > 0) {
+            const olderBuys = remainingBuys.filter(buy => 
+              new Date(buy.date) < sellDate && 
+              buy.remainingQty > 0
+            )
+            
+            for (const buy of olderBuys) {
+              if (remainingSellQty <= 0) break
+              
+              const matchQty = Math.min(remainingSellQty, buy.remainingQty)
+              if (matchQty > 0) {
+                const costBasis = matchQty * buy.price + (buy.brokerage * matchQty / buy.quantity)
+                const sellValue = matchQty * sell.price - (sell.brokerage * matchQty / sell.quantity)
+                const pnl = sellValue - costBasis
+                const pnlPercent = costBasis > 0 ? (pnl / costBasis) * 100 : 0
+                const holdingDays = calculateHoldingPeriod(buy.date, sell.date)
+                
+                rows.push({
+                  stock,
+                  account: userid,
+                  accountName: accountData?.name || userid,
+                  sellId: sell.id,
+                  sellDate: sell.date,
+                  sellQty: sell.quantity,
+                  sellPrice: sell.price,
+                  sellValue,
+                  buyId: buy.id,
+                  buyDate: buy.date,
+                  buyQty: buy.quantity,
+                  buyPrice: buy.price,
+                  matchedQty: matchQty,
+                  costBasis,
+                  pnl,
+                  pnlPercent,
+                  holdingDays,
+                  isLongTerm: holdingDays >= 365,
+                  isIntraday: false
+                })
+                
+                buy.remainingQty -= matchQty
+                remainingSellQty -= matchQty
+              }
+            }
+          }
         }
       })
-    }
+    })
     
-    // Apply stock filter
-    if (stockFilter) {
-      summaries = summaries.filter(stock => stock.stock === stockFilter)
-    }
-    
-    return summaries.sort((a, b) => b.totalPnL - a.totalPnL)
+    // Sort by sell date descending, then by stock
+    return rows.sort((a, b) => {
+      const dateCompare = new Date(b.sellDate).getTime() - new Date(a.sellDate).getTime()
+      if (dateCompare !== 0) return dateCompare
+      return a.stock.localeCompare(b.stock)
+    })
   }, [data, accountFilter, stockFilter, yearFilter, accounts, activeAccounts])
-
-  const toggleStockExpansion = (stock: string) => {
-    const newExpanded = new Set(expandedStocks)
-    if (newExpanded.has(stock)) {
-      newExpanded.delete(stock)
-      // Also collapse all accounts under this stock
-      const accountKeys = Array.from(expandedAccounts).filter(key => key.startsWith(`${stock}-`))
-      accountKeys.forEach(key => expandedAccounts.delete(key))
-      setExpandedAccounts(new Set(expandedAccounts))
-    } else {
-      newExpanded.add(stock)
-    }
-    setExpandedStocks(newExpanded)
-  }
-
-  const toggleAccountExpansion = (stock: string, userid: string) => {
-    const key = `${stock}-${userid}`
-    const newExpanded = new Set(expandedAccounts)
-    if (newExpanded.has(key)) {
-      newExpanded.delete(key)
-    } else {
-      newExpanded.add(key)
-    }
-    setExpandedAccounts(newExpanded)
-  }
 
   const exportToCSV = () => {
     const csvRows = []
-    const headers = ['Stock', 'Account', 'Sell Date', 'Sell Qty', 'Sell Price', 'Sell Value', 'Buy Date', 'Buy Qty', 'Buy Price', 'Matched Qty', 'Cost Basis', 'P/L', 'P/L %', 'Term']
+    const headers = ['Stock', 'Account', 'Account Name', 'Sell Date', 'Sell Qty', 'Sell Price', 'Sell Value', 'Buy Date', 'Buy Qty', 'Buy Price', 'Matched Qty', 'Cost Basis', 'P/L', 'P/L %', 'Holding Days', 'Term', 'Type']
     csvRows.push(headers.join(','))
 
-    stockPnLData.forEach(stock => {
-      stock.accounts.forEach(account => {
-        account.sellsWithMatches.forEach(sellMatch => {
-          sellMatch.matchedBuys.forEach(buy => {
-            const holdingDays = calculateHoldingPeriod(buy.date, sellMatch.sell.date)
-            const term = holdingDays >= 365 ? 'Long Term' : 'Short Term'
-            const row = [
-              stock.stock,
-              account.userid,
-              format(new Date(sellMatch.sell.date), 'dd-MMM-yy'),
-              sellMatch.sell.quantity,
-              sellMatch.sell.price,
-              sellMatch.sell.tradeValue - sellMatch.sell.brokerage,
-              format(new Date(buy.date), 'dd-MMM-yy'),
-              buy.quantity,
-              buy.price,
-              buy.matchedQuantity,
-              buy.matchedQuantity * buy.price,
-              sellMatch.profitLoss,
-              sellMatch.profitLossPercent.toFixed(2),
-              term
-            ]
-            csvRows.push(row.join(','))
-          })
-        })
-      })
+    flattenedPnLData.forEach(row => {
+      const csvRow = [
+        row.stock,
+        row.account,
+        row.accountName,
+        format(new Date(row.sellDate), 'dd-MMM-yy'),
+        row.sellQty,
+        row.sellPrice,
+        row.sellValue.toFixed(2),
+        format(new Date(row.buyDate), 'dd-MMM-yy'),
+        row.buyQty,
+        row.buyPrice,
+        row.matchedQty,
+        row.costBasis.toFixed(2),
+        row.pnl.toFixed(2),
+        row.pnlPercent.toFixed(2),
+        row.holdingDays,
+        row.isLongTerm ? 'Long Term' : 'Short Term',
+        row.isIntraday ? 'Intraday' : 'Delivery'
+      ]
+      csvRows.push(csvRow.join(','))
     })
 
     const csvContent = csvRows.join('\n')
@@ -499,20 +369,42 @@ export default function ProfitLossPage() {
     let totalSellValue = 0
     let totalCostBasis = 0
     let totalPnL = 0
-    let totalSellQty = 0
-    let profitableStocks = 0
-    let lossStocks = 0
+    let uniqueStocksSet = new Set<string>()
+    let profitableStocks = new Set<string>()
+    let lossStocks = new Set<string>()
+    let longTermPnL = 0
+    let shortTermPnL = 0
+    let intradayPnL = 0
 
-    stockPnLData.forEach(stock => {
-      totalSellValue += stock.totalSellValue
-      totalCostBasis += stock.totalCostBasis
-      totalPnL += stock.totalPnL
-      totalSellQty += stock.totalSellQty
+    // Group by stock to calculate stock-level metrics
+    const stockPnLMap = new Map<string, number>()
+    
+    flattenedPnLData.forEach(row => {
+      totalSellValue += row.sellValue
+      totalCostBasis += row.costBasis
+      totalPnL += row.pnl
+      uniqueStocksSet.add(row.stock)
       
-      if (stock.totalPnL > 0) {
-        profitableStocks++
-      } else if (stock.totalPnL < 0) {
-        lossStocks++
+      // Accumulate P&L by stock
+      const currentPnL = stockPnLMap.get(row.stock) || 0
+      stockPnLMap.set(row.stock, currentPnL + row.pnl)
+      
+      // Track term-based P&L
+      if (row.isIntraday) {
+        intradayPnL += row.pnl
+      } else if (row.isLongTerm) {
+        longTermPnL += row.pnl
+      } else {
+        shortTermPnL += row.pnl
+      }
+    })
+    
+    // Determine profitable vs loss-making stocks
+    stockPnLMap.forEach((pnl, stock) => {
+      if (pnl > 0) {
+        profitableStocks.add(stock)
+      } else if (pnl < 0) {
+        lossStocks.add(stock)
       }
     })
 
@@ -523,9 +415,13 @@ export default function ProfitLossPage() {
       totalCostBasis,
       totalPnL,
       totalPnLPercent,
-      totalSellQty,
-      profitableStocks,
-      lossStocks
+      uniqueStocks: uniqueStocksSet.size,
+      profitableStocks: profitableStocks.size,
+      lossStocks: lossStocks.size,
+      longTermPnL,
+      shortTermPnL,
+      intradayPnL,
+      totalTransactions: flattenedPnLData.length
     }
   }
 
@@ -564,14 +460,14 @@ export default function ProfitLossPage() {
             </p>
           )}
         </div>
-        <Button onClick={exportToCSV} disabled={!accountFilter || stockPnLData.length === 0}>
+        <Button onClick={exportToCSV} disabled={!accountFilter || flattenedPnLData.length === 0}>
           <Download className="mr-2 h-4 w-4" />
           Export CSV
         </Button>
       </div>
 
       {/* Summary Stats */}
-      {accountFilter && stockPnLData.length > 0 && (
+      {accountFilter && flattenedPnLData.length > 0 && (
         <>
           {yearFilter && yearFilter !== 'all' && (
             <h3 className="text-lg font-semibold">
@@ -579,54 +475,88 @@ export default function ProfitLossPage() {
             </h3>
           )}
           <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-6">
-          <Card>
-            <CardHeader className="pb-1">
-              <CardTitle className="text-xs">Total Sell Value</CardTitle>
-            </CardHeader>
-            <CardContent className="pb-2">
-              <div className="text-lg font-bold">{formatCurrency(summary.totalSellValue)}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-1">
-              <CardTitle className="text-xs">Total Cost Basis</CardTitle>
-            </CardHeader>
-            <CardContent className="pb-2">
-              <div className="text-lg font-bold">{formatCurrency(summary.totalCostBasis)}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-1">
-              <CardTitle className="text-xs">Realized P/L</CardTitle>
-            </CardHeader>
-            <CardContent className="pb-2">
-              <PLDisplay value={summary.totalPnL} percent={summary.totalPnLPercent} />
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-1">
-              <CardTitle className="text-xs">Stocks Traded</CardTitle>
-            </CardHeader>
-            <CardContent className="pb-2">
-              <div className="text-lg font-bold">{stockPnLData.length}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-1">
-              <CardTitle className="text-xs">Profitable</CardTitle>
-            </CardHeader>
-            <CardContent className="pb-2">
-              <div className="text-lg font-bold text-green-600">{summary.profitableStocks}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-1">
-              <CardTitle className="text-xs">Loss Making</CardTitle>
-            </CardHeader>
-            <CardContent className="pb-2">
-              <div className="text-lg font-bold text-red-600">{summary.lossStocks}</div>
-            </CardContent>
-          </Card>
+            <Card>
+              <CardHeader className="pb-1">
+                <CardTitle className="text-xs">Total Sell Value</CardTitle>
+              </CardHeader>
+              <CardContent className="pb-2">
+                <div className="text-lg font-bold">{formatCurrency(summary.totalSellValue)}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-1">
+                <CardTitle className="text-xs">Total Cost Basis</CardTitle>
+              </CardHeader>
+              <CardContent className="pb-2">
+                <div className="text-lg font-bold">{formatCurrency(summary.totalCostBasis)}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-1">
+                <CardTitle className="text-xs">Realized P/L</CardTitle>
+              </CardHeader>
+              <CardContent className="pb-2">
+                <PLDisplay value={summary.totalPnL} percent={summary.totalPnLPercent} />
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-1">
+                <CardTitle className="text-xs">Stocks Traded</CardTitle>
+              </CardHeader>
+              <CardContent className="pb-2">
+                <div className="text-lg font-bold">{summary.uniqueStocks}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-1">
+                <CardTitle className="text-xs">Profitable</CardTitle>
+              </CardHeader>
+              <CardContent className="pb-2">
+                <div className="text-lg font-bold text-green-600">{summary.profitableStocks}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-1">
+                <CardTitle className="text-xs">Loss Making</CardTitle>
+              </CardHeader>
+              <CardContent className="pb-2">
+                <div className="text-lg font-bold text-red-600">{summary.lossStocks}</div>
+              </CardContent>
+            </Card>
+          </div>
+          
+          {/* Term-based P&L Summary */}
+          <div className="grid gap-3 md:grid-cols-3">
+            <Card>
+              <CardHeader className="pb-1">
+                <CardTitle className="text-xs">Long Term Gains</CardTitle>
+              </CardHeader>
+              <CardContent className="pb-2">
+                <div className={cn("text-lg font-bold", summary.longTermPnL >= 0 ? "text-emerald-600" : "text-red-600")}>
+                  {summary.longTermPnL >= 0 ? '+' : '-'}{formatCurrency(Math.abs(summary.longTermPnL))}
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-1">
+                <CardTitle className="text-xs">Short Term Gains</CardTitle>
+              </CardHeader>
+              <CardContent className="pb-2">
+                <div className={cn("text-lg font-bold", summary.shortTermPnL >= 0 ? "text-emerald-600" : "text-red-600")}>
+                  {summary.shortTermPnL >= 0 ? '+' : '-'}{formatCurrency(Math.abs(summary.shortTermPnL))}
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-1">
+                <CardTitle className="text-xs">Intraday P&L</CardTitle>
+              </CardHeader>
+              <CardContent className="pb-2">
+                <div className={cn("text-lg font-bold", summary.intradayPnL >= 0 ? "text-emerald-600" : "text-red-600")}>
+                  {summary.intradayPnL >= 0 ? '+' : '-'}{formatCurrency(Math.abs(summary.intradayPnL))}
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </>
       )}
@@ -784,242 +714,64 @@ export default function ProfitLossPage() {
           <CardContent className="p-0">
             <Table>
               <TableHeader>
-                <TableRow className="h-10">
-                  <TableHead className="w-12"></TableHead>
-                  <TableHead>Stock / Account</TableHead>
-                  <TableHead className="text-right">Sell Qty</TableHead>
-                  <TableHead className="text-right">Sell Value</TableHead>
-                  <TableHead className="text-right">Cost Basis</TableHead>
-                  <TableHead className="text-right bg-green-50 dark:bg-green-950/20">
-                    <span className="text-green-700 dark:text-green-300 font-semibold">Realized P/L</span>
+                <TableRow className="h-8">
+                  <TableHead className="w-24 px-2 text-xs">Stock</TableHead>
+                  <TableHead className="w-16 px-2 text-center text-xs">Sell ID</TableHead>
+                  <TableHead className="w-24 px-2 text-xs">Sell Date</TableHead>
+                  <TableHead className="w-16 px-2 text-right text-xs">Sell Qty</TableHead>
+                  <TableHead className="w-20 px-2 text-right text-xs">Sell Price</TableHead>
+                  <TableHead className="w-16 px-2 text-center text-xs">Buy ID</TableHead>
+                  <TableHead className="w-24 px-2 text-xs">Buy Date</TableHead>
+                  <TableHead className="w-16 px-2 text-right text-xs">Match Qty</TableHead>
+                  <TableHead className="w-20 px-2 text-right text-xs">Buy Price</TableHead>
+                  <TableHead className="w-16 px-2 text-xs">Type</TableHead>
+                  <TableHead className="w-16 px-2 text-xs">Term</TableHead>
+                  <TableHead className="w-24 px-2 text-right text-xs">Cost Basis</TableHead>
+                  <TableHead className="w-24 px-2 text-right text-xs">Sell Value</TableHead>
+                  <TableHead className="w-24 px-2 text-right text-xs bg-green-50 dark:bg-green-950/20">
+                    <span className="text-green-700 dark:text-green-300 font-semibold">P/L</span>
                   </TableHead>
-                  <TableHead className="text-right py-1">P/L %</TableHead>
+                  <TableHead className="w-20 px-2 text-right text-xs">P/L %</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-24 text-center">
+                    <TableCell colSpan={16} className="h-16 text-center text-xs">
                       Loading...
                     </TableCell>
                   </TableRow>
-                ) : stockPnLData.length === 0 ? (
+                ) : flattenedPnLData.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-24 text-center">
+                    <TableCell colSpan={16} className="h-16 text-center text-xs">
                       No closed positions found for the selected criteria.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  stockPnLData.map((stock) => (
-                    <>
-                      {/* Level 1: Stock Summary Row */}
-                      <TableRow 
-                        key={stock.stock}
-                        className="font-semibold bg-muted/50 hover:bg-muted cursor-pointer h-8"
-                        onClick={() => toggleStockExpansion(stock.stock)}
-                      >
-                        <TableCell className="py-1">
-                          {expandedStocks.has(stock.stock) ? (
-                            <ChevronDown className="h-4 w-4" />
-                          ) : (
-                            <ChevronRight className="h-4 w-4" />
-                          )}
-                        </TableCell>
-                        <TableCell className="font-semibold py-1">{stock.stock}</TableCell>
-                        <TableCell className="text-right py-1">{stock.totalSellQty.toFixed(2)}</TableCell>
-                        <TableCell className="text-right py-1">{formatCurrency(stock.totalSellValue)}</TableCell>
-                        <TableCell className="text-right py-1">{formatCurrency(stock.totalCostBasis)}</TableCell>
-                        <TableCell className="text-right py-1 bg-green-50 dark:bg-green-950/20">
-                          <PLDisplay value={stock.totalPnL} percent={stock.totalPnLPercent} />
-                        </TableCell>
-                        <TableCell className="text-right py-1">
-                          <Badge variant={stock.totalPnL >= 0 ? 'default' : 'destructive'}>
-                            {stock.totalPnLPercent >= 0 ? '+' : ''}{stock.totalPnLPercent.toFixed(2)}%
-                          </Badge>
-                        </TableCell>
-                      </TableRow>
-
-                      {/* Level 2: Account Summary Rows */}
-                      {expandedStocks.has(stock.stock) && stock.accounts.map((account) => {
-                        const accountKey = `${stock.stock}-${account.userid}`
-                        const isAccountExpanded = expandedAccounts.has(accountKey)
-                        
-                        return (
-                          <>
-                            <TableRow 
-                              key={accountKey}
-                              className="hover:bg-muted/30 cursor-pointer h-8"
-                              onClick={() => toggleAccountExpansion(stock.stock, account.userid)}
-                            >
-                              <TableCell className="pl-8 py-1">
-                                {isAccountExpanded ? (
-                                  <ChevronDown className="h-3 w-3" />
-                                ) : (
-                                  <ChevronRight className="h-3 w-3" />
-                                )}
-                              </TableCell>
-                              <TableCell className="pl-8 py-1">
-                                <div className="flex items-center gap-2">
-                                  <span>{account.userid}</span>
-                                  <span className="text-sm text-muted-foreground">({account.name})</span>
-                                </div>
-                              </TableCell>
-                              <TableCell className="text-right py-1">{account.totalSellQty.toFixed(2)}</TableCell>
-                              <TableCell className="text-right py-1">{formatCurrency(account.totalSellValue)}</TableCell>
-                              <TableCell className="text-right py-1">{formatCurrency(account.totalCostBasis)}</TableCell>
-                              <TableCell className="text-right py-1 bg-green-50 dark:bg-green-950/20">
-                                <PLDisplay value={account.totalPnL} percent={account.totalPnLPercent} />
-                              </TableCell>
-                              <TableCell className="text-right py-1">
-                                <Badge variant={account.totalPnL >= 0 ? 'default' : 'destructive'} className="text-xs">
-                                  {account.totalPnLPercent >= 0 ? '+' : ''}{account.totalPnLPercent.toFixed(2)}%
-                                </Badge>
-                              </TableCell>
-                            </TableRow>
-
-                            {/* Level 3: Sell Transactions with Matched Buys */}
-                            {isAccountExpanded && (
-                              <TableRow>
-                                <TableCell colSpan={7} className="p-0">
-                                  <div className="bg-muted/20 p-4">
-                                    <Table>
-                                      <TableHeader>
-                                        <TableRow className="h-8">
-                                          <TableHead className="w-16 py-1">Sell ID</TableHead>
-                                          <TableHead className="py-1">Stock</TableHead>
-                                          <TableHead className="py-1">Sell Date</TableHead>
-                                          <TableHead className="text-right py-1">Sell Qty</TableHead>
-                                          <TableHead className="text-right py-1">Sell Price</TableHead>
-                                          <TableHead className="w-16 py-1">Buy ID</TableHead>
-                                          <TableHead className="py-1">Buy Date</TableHead>
-                                          <TableHead className="text-right py-1">Match Qty</TableHead>
-                                          <TableHead className="text-right py-1">Buy Price</TableHead>
-                                          <TableHead className="py-1">Method</TableHead>
-                                          <TableHead className="py-1">Term</TableHead>
-                                          <TableHead className="text-right py-1">Cost Basis</TableHead>
-                                          <TableHead className="text-right py-1">Sell Value</TableHead>
-                                          <TableHead className="text-right py-1">P/L</TableHead>
-                                          <TableHead className="text-right py-1">P/L %</TableHead>
-                                        </TableRow>
-                                      </TableHeader>
-                                      <TableBody>
-                                        {account.sellsWithMatches.map((sellMatch) => {
-                                          const sellValue = sellMatch.sell.tradeValue - sellMatch.sell.brokerage
-                                          const sellValuePerShare = sellValue / sellMatch.sell.quantity
-                                          
-                                          return sellMatch.matchedBuys.map((buy, buyIdx) => {
-                                            const isIntradayBuy = new Date(buy.date).toDateString() === new Date(sellMatch.sell.date).toDateString()
-                                            const buyAmount = buy.matchedQuantity * buy.price
-                                            const buyBrokerage = (buy.brokerage * buy.matchedQuantity / buy.quantity)
-                                            const costBasis = buyAmount + buyBrokerage
-                                            const matchedSellValue = buy.matchedQuantity * sellValuePerShare
-                                            const matchPnL = matchedSellValue - costBasis
-                                            const matchPnLPercent = costBasis > 0 ? (matchPnL / costBasis) * 100 : 0
-                                            
-                                            // Calculate holding period and determine term
-                                            const holdingDays = calculateHoldingPeriod(buy.date, sellMatch.sell.date)
-                                            const isLongTerm = holdingDays >= 365
-                                            
-                                            return (
-                                              <TableRow 
-                                                key={`${sellMatch.sell.id}-buy-${buy.id}-${buyIdx}`} 
-                                                className={cn(
-                                                  "h-8 hover:bg-muted/30",
-                                                  isIntradayBuy && "bg-blue-50 dark:bg-blue-950/20",
-                                                  buyIdx === 0 && "border-t-2"
-                                                )}
-                                              >
-                                                <TableCell className="font-mono text-xs py-1">
-                                                  #{sellMatch.sell.id}
-                                                </TableCell>
-                                                <TableCell className="py-1 text-xs font-semibold">
-                                                  {sellMatch.sell.stock}
-                                                </TableCell>
-                                                <TableCell className="py-1 text-xs">
-                                                  {format(new Date(sellMatch.sell.date), 'dd-MMM-yy')}
-                                                </TableCell>
-                                                <TableCell className="text-right py-1 text-xs">
-                                                  {sellMatch.sell.quantity}
-                                                </TableCell>
-                                                <TableCell className="text-right py-1 text-xs">
-                                                  {formatCurrency(sellMatch.sell.price)}
-                                                </TableCell>
-                                                <TableCell className="font-mono text-xs py-1">
-                                                  #{buy.id}
-                                                </TableCell>
-                                                <TableCell className="py-1 text-xs">
-                                                  {format(new Date(buy.date), 'dd-MMM-yy')}
-                                                </TableCell>
-                                                <TableCell className="text-right py-1 text-xs font-medium">
-                                                  {buy.matchedQuantity}
-                                                </TableCell>
-                                                <TableCell className="text-right py-1 text-xs">
-                                                  {formatCurrency(buy.price)}
-                                                </TableCell>
-                                                <TableCell className="py-1">
-                                                  {isIntradayBuy ? (
-                                                    <Badge variant="outline" className="text-xs">Intraday</Badge>
-                                                  ) : (
-                                                    <span className="text-xs">&nbsp;</span>
-                                                  )}
-                                                </TableCell>
-                                                <TableCell className="py-1">
-                                                  {isLongTerm ? (
-                                                    <Badge 
-                                                      className={cn(
-                                                        "text-xs flex items-center gap-1",
-                                                        "bg-purple-100 text-purple-800 hover:bg-purple-200",
-                                                        "dark:bg-purple-900/20 dark:text-purple-300 dark:hover:bg-purple-900/30"
-                                                      )}
-                                                    >
-                                                      <Calendar className="h-3 w-3" />
-                                                      LTG
-                                                    </Badge>
-                                                  ) : (
-                                                    <Badge 
-                                                      className={cn(
-                                                        "text-xs flex items-center gap-1",
-                                                        "bg-orange-100 text-orange-800 hover:bg-orange-200",
-                                                        "dark:bg-orange-900/20 dark:text-orange-300 dark:hover:bg-orange-900/30"
-                                                      )}
-                                                    >
-                                                      <Clock className="h-3 w-3" />
-                                                      STG
-                                                    </Badge>
-                                                  )}
-                                                </TableCell>
-                                                <TableCell className="text-right py-1 text-xs">
-                                                  {formatCurrency(costBasis)}
-                                                </TableCell>
-                                                <TableCell className="text-right py-1 text-xs">
-                                                  {formatCurrency(matchedSellValue)}
-                                                </TableCell>
-                                                <TableCell className={cn(
-                                                  "text-right py-1 font-medium",
-                                                  matchPnL >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"
-                                                )}>
-                                                  {matchPnL >= 0 ? '+' : '-'}{formatCurrency(Math.abs(matchPnL))}
-                                                </TableCell>
-                                                <TableCell className={cn(
-                                                  "text-right py-1 text-xs font-medium",
-                                                  matchPnLPercent >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"
-                                                )}>
-                                                  {matchPnLPercent >= 0 ? '+' : ''}{matchPnLPercent.toFixed(2)}%
-                                                </TableCell>
-                                              </TableRow>
-                                            )
-                                          })
-                                        })}
-                                      </TableBody>
-                                    </Table>
-                                  </div>
-                                </TableCell>
-                              </TableRow>
-                            )}
-                          </>
-                        )
-                      })}
-                    </>
+                  flattenedPnLData.map((row, index) => (
+                    <TableRow 
+                      key={`${row.sellId}-${row.buyId}-${index}`}
+                      className={cn(
+                        "h-7 text-xs",
+                        row.isIntraday && "bg-blue-50 dark:bg-blue-950/20"
+                      )}
+                    >
+                      <TableCell className="font-semibold py-1 px-2">{row.stock}</TableCell>
+                      <TableCell className="text-center font-mono text-xs py-1 px-2">#{row.sellId}</TableCell>
+                      <TableCell className="py-1 text-xs px-2">{format(new Date(row.sellDate), 'dd-MMM-yy')}</TableCell>
+                      <TableCell className="text-right py-1 text-xs px-2">{row.sellQty}</TableCell>
+                      <TableCell className="text-right py-1 text-xs px-2">{formatCurrency(row.sellPrice)}</TableCell>
+                      <TableCell className="text-center font-mono text-xs py-1 px-2">#{row.buyId}</TableCell>
+                      <TableCell className="py-1 text-xs px-2">{format(new Date(row.buyDate), 'dd-MMM-yy')}</TableCell>
+                      <TableCell className="text-right py-1 text-xs font-medium px-2">{row.matchedQty}</TableCell>
+                      <TableCell className="text-right py-1 text-xs px-2">{formatCurrency(row.buyPrice)}</TableCell>
+                      <TableCell className="py-1 px-2">{row.isIntraday ? (<Badge variant="outline" className="text-xs">Intraday</Badge>) : (<span className="text-xs text-muted-foreground">Delivery</span>)}</TableCell>
+                      <TableCell className="py-1 px-2">{row.isLongTerm ? (<Badge className={cn("text-xs flex items-center gap-1","bg-purple-100 text-purple-800 hover:bg-purple-200","dark:bg-purple-900/20 dark:text-purple-300 dark:hover:bg-purple-900/30")}> <Calendar className="h-3 w-3" /> LTG </Badge>) : (<Badge className={cn("text-xs flex items-center gap-1","bg-orange-100 text-orange-800 hover:bg-orange-200","dark:bg-orange-900/20 dark:text-orange-300 dark:hover:bg-orange-900/30")}> <Clock className="h-3 w-3" /> STG </Badge>)}</TableCell>
+                      <TableCell className="text-right py-1 text-xs px-2">{formatCurrency(row.costBasis)}</TableCell>
+                      <TableCell className="text-right py-1 text-xs px-2">{formatCurrency(row.sellValue)}</TableCell>
+                      <TableCell className={cn("text-right py-1 font-medium bg-green-50 dark:bg-green-950/20 px-2", row.pnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")}>{row.pnl >= 0 ? '+' : '-'}{formatCurrency(Math.abs(row.pnl))}</TableCell>
+                      <TableCell className={cn("text-right py-1 text-xs font-medium px-2", row.pnlPercent >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")}>{row.pnlPercent >= 0 ? '+' : ''}{row.pnlPercent.toFixed(2)}%</TableCell>
+                    </TableRow>
                   ))
                 )}
               </TableBody>
