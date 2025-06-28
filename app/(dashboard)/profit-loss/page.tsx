@@ -129,10 +129,19 @@ export default function ProfitLossPage() {
     return Array.from(stocks).sort()
   }, [data])
   
-  // Get unique years from data
+  // Get unique fiscal years from data
   const uniqueYears = useMemo(() => {
-    const years = new Set(data.filter(t => t.action === 'Sell').map(t => new Date(t.date).getFullYear()))
-    return Array.from(years).sort((a, b) => b - a)
+    const fiscalYears = new Set(data.filter(t => t.action === 'Sell').map(t => {
+      const date = new Date(t.date)
+      const month = date.getMonth() + 1 // getMonth() returns 0-11, so add 1
+      const year = date.getFullYear()
+      
+      // Indian fiscal year runs from April 1 to March 31
+      // If month is Jan-Mar, it belongs to previous fiscal year
+      // If month is Apr-Dec, it belongs to current fiscal year
+      return month >= 4 ? year : year - 1
+    }))
+    return Array.from(fiscalYears).sort((a, b) => b - a)
   }, [data])
 
   useEffect(() => {
@@ -166,117 +175,80 @@ export default function ProfitLossPage() {
     }
   }
 
- // Match sells with buys using FIFO/LIFO logic and flatten the structure
-const flattenedPnLData = useMemo(() => {
-  const rows: FlattenedPnLRow[] = []
-  
-  // Apply account filter to get accounts to process
-  let accountsToProcess: string[] = []
-  if (accountFilter === 'all-accounts') {
-    accountsToProcess = Array.from(new Set(data.map(t => t.userid)))
-  } else if (accountFilter === 'active-accounts') {
-    const activeAccountIds = new Set(activeAccounts.map(acc => acc.userid))
-    accountsToProcess = Array.from(new Set(data.map(t => t.userid))).filter(id => activeAccountIds.has(id))
-  } else if (accountFilter) {
-    accountsToProcess = [accountFilter]
-  }
-  
-  // Process each account and stock combination
-  accountsToProcess.forEach(userid => {
-    const accountData = accounts.find(a => a.userid === userid)
-    const accountTransactions = data.filter(t => t.userid === userid)
+  // Match sells with buys using FIFO/LIFO logic and flatten the structure
+  const flattenedPnLData = useMemo(() => {
+    const rows: FlattenedPnLRow[] = []
     
-    // Group by stock
-    const stockGroups = new Map<string, Transaction[]>()
-    accountTransactions.forEach(t => {
-      if (!stockGroups.has(t.stock)) {
-        stockGroups.set(t.stock, [])
-      }
-      stockGroups.get(t.stock)!.push(t)
-    })
+    // Apply account filter to get accounts to process
+    let accountsToProcess: string[] = []
+    if (accountFilter === 'all-accounts') {
+      accountsToProcess = Array.from(new Set(data.map(t => t.userid)))
+    } else if (accountFilter === 'active-accounts') {
+      const activeAccountIds = new Set(activeAccounts.map(acc => acc.userid))
+      accountsToProcess = Array.from(new Set(data.map(t => t.userid))).filter(id => activeAccountIds.has(id))
+    } else if (accountFilter) {
+      accountsToProcess = [accountFilter]
+    }
     
-    // Process each stock
-    stockGroups.forEach((transactions, stock) => {
-      // Apply stock filter
-      if (stockFilter && stock !== stockFilter) return
+    // Process each account and stock combination
+    accountsToProcess.forEach(userid => {
+      const accountData = accounts.find(a => a.userid === userid)
+      const accountTransactions = data.filter(t => t.userid === userid)
       
-      // Sort transactions by date
-      const sortedTransactions = [...transactions].sort((a, b) => 
-        new Date(a.date).getTime() - new Date(b.date).getTime()
-      )
+      // Group by stock
+      const stockGroups = new Map<string, Transaction[]>()
+      accountTransactions.forEach(t => {
+        if (!stockGroups.has(t.stock)) {
+          stockGroups.set(t.stock, [])
+        }
+        stockGroups.get(t.stock)!.push(t)
+      })
       
-      // Apply year filter ONLY to sells, keep all buys for matching
-      let sells = sortedTransactions.filter(t => t.action === 'Sell')
-      if (yearFilter && yearFilter !== 'all') {
-        const year = parseInt(yearFilter)
-        sells = sells.filter(t => new Date(t.date).getFullYear() === year)
-      }
-      
-      // Keep ALL buys regardless of year filter for proper matching
-      const buys = sortedTransactions.filter(t => t.action === 'Buy')
-      
-      const remainingBuys = buys.map(buy => ({
-        ...buy,
-        remainingQty: buy.quantity
-      }))
-      
-      for (const sell of sells) {
-        const sellDate = new Date(sell.date)
-        let remainingSellQty = sell.quantity
+      // Process each stock
+      stockGroups.forEach((transactions, stock) => {
+        // Apply stock filter
+        if (stockFilter && stock !== stockFilter) return
         
-        // Check if this is an intraday sell (LIFO)
-        const intradayBuys = remainingBuys.filter(buy => 
-          new Date(buy.date).toDateString() === sellDate.toDateString() && 
-          buy.remainingQty > 0
-        ).reverse() // Reverse for LIFO
+        // Sort transactions by date
+        const sortedTransactions = [...transactions].sort((a, b) => 
+          new Date(a.date).getTime() - new Date(b.date).getTime()
+        )
         
-        // First, match with intraday buys (LIFO)
-        for (const buy of intradayBuys) {
-          if (remainingSellQty <= 0) break
-          
-          const matchQty = Math.min(remainingSellQty, buy.remainingQty)
-          if (matchQty > 0) {
-            const costBasis = matchQty * buy.price + (buy.brokerage * matchQty / buy.quantity)
-            const sellValue = matchQty * sell.price - (sell.brokerage * matchQty / sell.quantity)
-            const pnl = sellValue - costBasis
-            const pnlPercent = costBasis > 0 ? (pnl / costBasis) * 100 : 0
-            const holdingDays = calculateHoldingPeriod(buy.date, sell.date)
+        // Apply year filter ONLY to sells, keep all buys for matching
+        let sells = sortedTransactions.filter(t => t.action === 'Sell')
+        if (yearFilter && yearFilter !== 'all') {
+          const fiscalYear = parseInt(yearFilter)
+          sells = sells.filter(t => {
+            const date = new Date(t.date)
+            const month = date.getMonth() + 1
+            const year = date.getFullYear()
             
-            rows.push({
-              stock,
-              account: userid,
-              accountName: accountData?.name || userid,
-              sellId: sell.id,
-              sellDate: sell.date,
-              sellQty: sell.quantity,
-              sellPrice: sell.price,
-              sellValue,
-              buyId: buy.id,
-              buyDate: buy.date,
-              buyQty: buy.quantity,
-              buyPrice: buy.price,
-              matchedQty: matchQty,
-              costBasis,
-              pnl,
-              pnlPercent,
-              holdingDays,
-              isLongTerm: holdingDays >= 365,
-              isIntraday: true
-            })
-            
-            buy.remainingQty -= matchQty
-            remainingSellQty -= matchQty
-          }
+            // Check if transaction falls in the selected fiscal year
+            const transactionFiscalYear = month >= 4 ? year : year - 1
+            return transactionFiscalYear === fiscalYear
+          })
         }
         
-        // Then, match with older buys (FIFO) if any quantity remains
-        if (remainingSellQty > 0) {
-          const olderBuys = remainingBuys.filter(buy => 
-            new Date(buy.date) < sellDate && 
-            buy.remainingQty > 0
-          )
+        // Keep ALL buys regardless of year filter for proper matching
+        const buys = sortedTransactions.filter(t => t.action === 'Buy')
+        
+        const remainingBuys = buys.map(buy => ({
+          ...buy,
+          remainingQty: buy.quantity
+        }))
+        
+        for (const sell of sells) {
+          const sellDate = new Date(sell.date)
+          let remainingSellQty = sell.quantity
           
-          for (const buy of olderBuys) {
+          // Check if this is an intraday sell (LIFO)
+          const intradayBuys = remainingBuys.filter(buy => 
+            new Date(buy.date).toDateString() === sellDate.toDateString() && 
+            buy.remainingQty > 0
+          ).reverse() // Reverse for LIFO
+          
+          // First, match with intraday buys (LIFO)
+          for (const buy of intradayBuys) {
             if (remainingSellQty <= 0) break
             
             const matchQty = Math.min(remainingSellQty, buy.remainingQty)
@@ -306,33 +278,84 @@ const flattenedPnLData = useMemo(() => {
                 pnlPercent,
                 holdingDays,
                 isLongTerm: holdingDays >= 365,
-                isIntraday: false
+                isIntraday: true
               })
               
               buy.remainingQty -= matchQty
               remainingSellQty -= matchQty
             }
           }
+          
+          // Then, match with older buys (FIFO) if any quantity remains
+          if (remainingSellQty > 0) {
+            const olderBuys = remainingBuys.filter(buy => 
+              new Date(buy.date) < sellDate && 
+              buy.remainingQty > 0
+            )
+            
+            for (const buy of olderBuys) {
+              if (remainingSellQty <= 0) break
+              
+              const matchQty = Math.min(remainingSellQty, buy.remainingQty)
+              if (matchQty > 0) {
+                const costBasis = matchQty * buy.price + (buy.brokerage * matchQty / buy.quantity)
+                const sellValue = matchQty * sell.price - (sell.brokerage * matchQty / sell.quantity)
+                const pnl = sellValue - costBasis
+                const pnlPercent = costBasis > 0 ? (pnl / costBasis) * 100 : 0
+                const holdingDays = calculateHoldingPeriod(buy.date, sell.date)
+                
+                rows.push({
+                  stock,
+                  account: userid,
+                  accountName: accountData?.name || userid,
+                  sellId: sell.id,
+                  sellDate: sell.date,
+                  sellQty: sell.quantity,
+                  sellPrice: sell.price,
+                  sellValue,
+                  buyId: buy.id,
+                  buyDate: buy.date,
+                  buyQty: buy.quantity,
+                  buyPrice: buy.price,
+                  matchedQty: matchQty,
+                  costBasis,
+                  pnl,
+                  pnlPercent,
+                  holdingDays,
+                  isLongTerm: holdingDays >= 365,
+                  isIntraday: false
+                })
+                
+                buy.remainingQty -= matchQty
+                remainingSellQty -= matchQty
+              }
+            }
+          }
         }
-      }
+      })
     })
-  })
-  
-  // Sort by stock name, then sell date descending, then buy date descending
-  return rows.sort((a, b) => {
-    // First sort by stock name (ascending)
-    const stockCompare = a.stock.localeCompare(b.stock)
-    if (stockCompare !== 0) return stockCompare
     
-    // Then by sell date (descending - most recent first)
-    const sellDateCompare = new Date(b.sellDate).getTime() - new Date(a.sellDate).getTime()
-    if (sellDateCompare !== 0) return sellDateCompare
-    
-    // Finally by buy date (descending - most recent first)
-    const buyDateCompare = new Date(b.buyDate).getTime() - new Date(a.buyDate).getTime()
-    return buyDateCompare
-  })
-}, [data, accountFilter, stockFilter, yearFilter, accounts, activeAccounts])
+    // Sort by stock name, account (if aggregate view), then sell date ascending, then buy date ascending
+    return rows.sort((a, b) => {
+      // First sort by stock name (ascending)
+      const stockCompare = a.stock.localeCompare(b.stock)
+      if (stockCompare !== 0) return stockCompare
+      
+      // If aggregate view, sort by account
+      if (accountFilter === 'all-accounts' || accountFilter === 'active-accounts') {
+        const accountCompare = a.account.localeCompare(b.account)
+        if (accountCompare !== 0) return accountCompare
+      }
+      
+      // Then by sell date (ascending - oldest first)
+      const sellDateCompare = new Date(a.sellDate).getTime() - new Date(b.sellDate).getTime()
+      if (sellDateCompare !== 0) return sellDateCompare
+      
+      // Finally by buy date (ascending - oldest first)
+      const buyDateCompare = new Date(a.buyDate).getTime() - new Date(b.buyDate).getTime()
+      return buyDateCompare
+    })
+  }, [data, accountFilter, stockFilter, yearFilter, accounts, activeAccounts])
 
   const exportToCSV = () => {
     const csvRows = []
@@ -367,7 +390,7 @@ const flattenedPnLData = useMemo(() => {
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    const yearSuffix = yearFilter && yearFilter !== 'all' ? `_${yearFilter}` : ''
+    const yearSuffix = yearFilter && yearFilter !== 'all' ? `_FY${yearFilter}-${(parseInt(yearFilter) + 1).toString().slice(-2)}` : ''
     a.download = `profit_loss${yearSuffix}_${format(new Date(), 'yyyy-MM-dd')}.csv`
     a.click()
     window.URL.revokeObjectURL(url)
@@ -464,7 +487,7 @@ const flattenedPnLData = useMemo(() => {
           {accountFilter && (
             <p className="text-sm text-muted-foreground mt-1">
               Detailed breakdown of realized gains and losses with FIFO/LIFO matching
-              {yearFilter && yearFilter !== 'all' && ` for year ${yearFilter}`}
+              {yearFilter && yearFilter !== 'all' && ` for FY ${yearFilter}-${(parseInt(yearFilter) + 1).toString().slice(-2)}`}
             </p>
           )}
         </div>
@@ -479,7 +502,7 @@ const flattenedPnLData = useMemo(() => {
         <>
           {yearFilter && yearFilter !== 'all' && (
             <h3 className="text-lg font-semibold">
-              Summary for {yearFilter}
+              Summary for FY {yearFilter}-{(parseInt(yearFilter) + 1).toString().slice(-2)}
             </h3>
           )}
           <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-6">
@@ -681,7 +704,7 @@ const flattenedPnLData = useMemo(() => {
                 <SelectItem value="all">All Years</SelectItem>
                 {uniqueYears.map((year) => (
                   <SelectItem key={year} value={year.toString()}>
-                    {year}
+                    FY {year}-{(year + 1).toString().slice(-2)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -724,6 +747,9 @@ const flattenedPnLData = useMemo(() => {
               <TableHeader>
                 <TableRow className="h-8">
                   <TableHead className="w-24 px-2 text-xs">Stock</TableHead>
+                  {(accountFilter === 'all-accounts' || accountFilter === 'active-accounts') && (
+                    <TableHead className="w-20 px-2 text-xs">Account</TableHead>
+                  )}
                   <TableHead className="w-16 px-2 text-center text-xs">Sell ID</TableHead>
                   <TableHead className="w-24 px-2 text-xs">Sell Date</TableHead>
                   <TableHead className="w-16 px-2 text-right text-xs">Sell Qty</TableHead>
@@ -732,12 +758,11 @@ const flattenedPnLData = useMemo(() => {
                   <TableHead className="w-24 px-2 text-xs">Buy Date</TableHead>
                   <TableHead className="w-16 px-2 text-right text-xs">Match Qty</TableHead>
                   <TableHead className="w-20 px-2 text-right text-xs">Buy Price</TableHead>
-                  <TableHead className="w-16 px-2 text-xs">Type</TableHead>
-                  <TableHead className="w-16 px-2 text-xs">Term</TableHead>
+                  <TableHead className="w-24 px-2 text-xs">Term</TableHead>
                   <TableHead className="w-24 px-2 text-right text-xs">Cost Basis</TableHead>
                   <TableHead className="w-24 px-2 text-right text-xs">Sell Value</TableHead>
-                  <TableHead className="w-24 px-2 text-right text-xs bg-green-50 dark:bg-green-950/20">
-                    <span className="text-green-700 dark:text-green-300 font-semibold">P/L</span>
+                  <TableHead className="w-24 px-2 text-right text-xs">
+                    <span className="font-semibold">P/L</span>
                   </TableHead>
                   <TableHead className="w-20 px-2 text-right text-xs">P/L %</TableHead>
                 </TableRow>
@@ -745,13 +770,13 @@ const flattenedPnLData = useMemo(() => {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={16} className="h-16 text-center text-xs">
+                    <TableCell colSpan={accountFilter === 'all-accounts' || accountFilter === 'active-accounts' ? 15 : 14} className="h-16 text-center text-xs">
                       Loading...
                     </TableCell>
                   </TableRow>
                 ) : flattenedPnLData.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={16} className="h-16 text-center text-xs">
+                    <TableCell colSpan={accountFilter === 'all-accounts' || accountFilter === 'active-accounts' ? 15 : 14} className="h-16 text-center text-xs">
                       No closed positions found for the selected criteria.
                     </TableCell>
                   </TableRow>
@@ -765,6 +790,11 @@ const flattenedPnLData = useMemo(() => {
                       )}
                     >
                       <TableCell className="font-semibold py-1 px-2">{row.stock}</TableCell>
+                      {(accountFilter === 'all-accounts' || accountFilter === 'active-accounts') && (
+                        <TableCell className="py-1 px-2 text-xs font-mono">
+                          {row.account}
+                        </TableCell>
+                      )}
                       <TableCell className="text-center font-mono text-xs py-1 px-2">#{row.sellId}</TableCell>
                       <TableCell className="py-1 text-xs px-2">{format(new Date(row.sellDate), 'dd-MMM-yy')}</TableCell>
                       <TableCell className="text-right py-1 text-xs px-2">{row.sellQty}</TableCell>
@@ -773,11 +803,49 @@ const flattenedPnLData = useMemo(() => {
                       <TableCell className="py-1 text-xs px-2">{format(new Date(row.buyDate), 'dd-MMM-yy')}</TableCell>
                       <TableCell className="text-right py-1 text-xs font-medium px-2">{row.matchedQty}</TableCell>
                       <TableCell className="text-right py-1 text-xs px-2">{formatCurrency(row.buyPrice)}</TableCell>
-                      <TableCell className="py-1 px-2">{row.isIntraday ? (<Badge variant="outline" className="text-xs">Intraday</Badge>) : (<span className="text-xs text-muted-foreground">Delivery</span>)}</TableCell>
-                      <TableCell className="py-1 px-2">{row.isLongTerm ? (<Badge className={cn("text-xs flex items-center gap-1","bg-purple-100 text-purple-800 hover:bg-purple-200","dark:bg-purple-900/20 dark:text-purple-300 dark:hover:bg-purple-900/30")}> <Calendar className="h-3 w-3" /> LTG </Badge>) : (<Badge className={cn("text-xs flex items-center gap-1","bg-orange-100 text-orange-800 hover:bg-orange-200","dark:bg-orange-900/20 dark:text-orange-300 dark:hover:bg-orange-900/30")}> <Clock className="h-3 w-3" /> STG </Badge>)}</TableCell>
+                      <TableCell className="py-1 px-2">
+                        {row.isIntraday ? (
+                          <Badge className={cn(
+                            "text-xs flex items-center gap-1",
+                            "bg-blue-100 text-blue-800 hover:bg-blue-200",
+                            "dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/30"
+                          )}>
+                            <Clock className="h-3 w-3" />
+                            STG Intraday
+                          </Badge>
+                        ) : row.isLongTerm ? (
+                          <Badge className={cn(
+                            "text-xs flex items-center gap-1",
+                            "bg-purple-100 text-purple-800 hover:bg-purple-200",
+                            "dark:bg-purple-900/20 dark:text-purple-300 dark:hover:bg-purple-900/30"
+                          )}>
+                            <Calendar className="h-3 w-3" />
+                            LTG
+                          </Badge>
+                        ) : (
+                          <Badge className={cn(
+                            "text-xs flex items-center gap-1",
+                            "bg-orange-100 text-orange-800 hover:bg-orange-200",
+                            "dark:bg-orange-900/20 dark:text-orange-300 dark:hover:bg-orange-900/30"
+                          )}>
+                            <Clock className="h-3 w-3" />
+                            STG
+                          </Badge>
+                        )}
+                      </TableCell>
                       <TableCell className="text-right py-1 text-xs px-2">{formatCurrency(row.costBasis)}</TableCell>
                       <TableCell className="text-right py-1 text-xs px-2">{formatCurrency(row.sellValue)}</TableCell>
-                      <TableCell className={cn("text-right py-1 font-medium bg-green-50 dark:bg-green-950/20 px-2", row.pnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")}>{row.pnl >= 0 ? '+' : '-'}{formatCurrency(Math.abs(row.pnl))}</TableCell>
+                      <TableCell className={cn(
+                        "text-right py-1 font-medium px-2",
+                        // Background color based on term type
+                        row.isIntraday
+                          ? "bg-blue-100 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300"
+                          : row.isLongTerm 
+                            ? "bg-purple-100 dark:bg-purple-900/20 text-purple-800 dark:text-purple-300" 
+                            : "bg-orange-100 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300"
+                      )}>
+                        {row.pnl >= 0 ? '+' : '-'}{formatCurrency(Math.abs(row.pnl))}
+                      </TableCell>
                       <TableCell className={cn("text-right py-1 text-xs font-medium px-2", row.pnlPercent >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")}>{row.pnlPercent >= 0 ? '+' : ''}{row.pnlPercent.toFixed(2)}%</TableCell>
                     </TableRow>
                   ))
