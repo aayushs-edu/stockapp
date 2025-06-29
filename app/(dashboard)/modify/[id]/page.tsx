@@ -144,7 +144,8 @@ export default function ModifyStockPage({ params }: { params: { id: string } }) 
         description: 'Stock transaction updated successfully',
       })
       
-      router.push('/transactions')
+      // Redirect back to the modify page to edit another transaction
+      router.push('/modify')
     } catch (error: any) {
       toast({
         title: 'Error',
@@ -173,7 +174,8 @@ export default function ModifyStockPage({ params }: { params: { id: string } }) 
         description: 'Stock transaction deleted successfully',
       })
       
-      router.push('/transactions')
+      // Redirect back to the modify page to edit another transaction
+      router.push('/modify')
     } catch (error: any) {
       toast({
         title: 'Error',
@@ -194,128 +196,117 @@ export default function ModifyStockPage({ params }: { params: { id: string } }) 
   }
 
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className="max-w-3xl mx-auto">
       <Card>
-        <CardHeader>
-          <CardTitle>Modify Stock Transaction #{params.id}</CardTitle>
+        <CardHeader className="pb-4">
+          <CardTitle className="text-lg">Modify Stock Transaction #{params.id}</CardTitle>
         </CardHeader>
         <CardContent>
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              <FormField
-                control={form.control}
-                name="userid"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Account</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                {/* Account and Date in first row */}
+                <FormField
+                  control={form.control}
+                  name="userid"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs">Account</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger className="h-9">
+                            <SelectValue placeholder={accountsLoading ? "Loading..." : "Select an account"} />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent className="max-h-60 overflow-y-auto">
+                          {accountsLoading ? (
+                            <div className="flex items-center justify-center py-4">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              <span className="ml-2 text-sm">Loading accounts...</span>
+                            </div>
+                          ) : accounts.length === 0 ? (
+                            <div className="py-4 text-center text-sm text-muted-foreground">
+                              No accounts found
+                            </div>
+                          ) : (
+                            accounts.map((account) => (
+                              <SelectItem key={account.userid} value={account.userid}>
+                                {account.userid} - {account.name} {!account.active && '(Inactive)'}
+                              </SelectItem>
+                            ))
+                          )}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="date"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs">Date</FormLabel>
                       <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder={accountsLoading ? "Loading..." : "Select an account"} />
-                        </SelectTrigger>
+                        <EnhancedDatePicker
+                          value={field.value}
+                          onChange={field.onChange}
+                          placeholder="Enter or select date"
+                          className="w-full h-9"
+                        />
                       </FormControl>
-                      <SelectContent className="max-h-60 overflow-y-auto">
-                        {accountsLoading ? (
-                          <div className="flex items-center justify-center py-4">
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            <span className="ml-2 text-sm">Loading accounts...</span>
-                          </div>
-                        ) : accounts.length === 0 ? (
-                          <div className="py-4 text-center text-sm text-muted-foreground">
-                            No accounts found
-                          </div>
-                        ) : (
-                          accounts.map((account) => (
-                            <SelectItem key={account.userid} value={account.userid}>
-                              {account.userid} - {account.name} {!account.active && '(Inactive)'}
-                            </SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-              <FormField
-                control={form.control}
-                name="date"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Date</FormLabel>
-                    <FormControl>
-                      <EnhancedDatePicker
-                        value={field.value}
-                        onChange={field.onChange}
-                        placeholder="Enter or select date"
-                        className="w-full"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="stock"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Stock Symbol</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g., RELIANCE" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="action"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Transaction Type</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
+                {/* Stock and Action in second row */}
+                <FormField
+                  control={form.control}
+                  name="stock"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs">Stock Symbol</FormLabel>
                       <FormControl>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
+                        <Input placeholder="e.g., RELIANCE" {...field} className="h-9" />
                       </FormControl>
-                      <SelectContent>
-                        <SelectItem value="Buy">Buy</SelectItem>
-                        <SelectItem value="Sell">Sell</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-              <FormField
-                control={form.control}
-                name="source"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Source</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g., Demat, Physical" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                <FormField
+                  control={form.control}
+                  name="action"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs">Transaction Type</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger className="h-9">
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="Buy">Buy</SelectItem>
+                          <SelectItem value="Sell">Sell</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-              <div className="grid grid-cols-2 gap-4">
+                {/* Quantity and Price in third row */}
                 <FormField
                   control={form.control}
                   name="quantity"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Quantity</FormLabel>
+                      <FormLabel className="text-xs">Quantity</FormLabel>
                       <FormControl>
-                        <Input type="number" step="0.01" {...field} />
+                        <Input type="number" step="0.01" {...field} className="h-9" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -327,9 +318,53 @@ export default function ModifyStockPage({ params }: { params: { id: string } }) 
                   name="price"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Price per Share</FormLabel>
+                      <FormLabel className="text-xs">Price per Share</FormLabel>
                       <FormControl>
-                        <Input type="number" step="0.01" {...field} />
+                        <Input type="number" step="0.01" {...field} className="h-9" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Brokerage and Source in fourth row */}
+                <FormField
+                  control={form.control}
+                  name="brokerage"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs">Brokerage</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="0.01" {...field} className="h-9" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="source"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs">Source</FormLabel>
+                      <FormControl>
+                        <Input placeholder="e.g., NSE, BSE" {...field} className="h-9" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Order Reference spans full width */}
+                <FormField
+                  control={form.control}
+                  name="orderRef"
+                  render={({ field }) => (
+                    <FormItem className="col-span-2">
+                      <FormLabel className="text-xs">Order Reference</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Optional order reference" {...field} className="h-9" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -337,49 +372,24 @@ export default function ModifyStockPage({ params }: { params: { id: string } }) 
                 />
               </div>
 
-              <FormField
-                control={form.control}
-                name="brokerage"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Brokerage</FormLabel>
-                    <FormControl>
-                      <Input type="number" step="0.01" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="orderRef"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Order Reference</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Optional order reference" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="rounded-lg bg-muted p-4">
-                <p className="text-sm font-medium">Trade Value</p>
-                <p className="text-2xl font-bold">{formatCurrency(tradeValue)}</p>
+              {/* Trade Value Display */}
+              <div className="rounded-lg bg-muted p-3">
+                <p className="text-xs font-medium text-muted-foreground">Trade Value</p>
+                <p className="text-lg font-bold">{formatCurrency(tradeValue)}</p>
               </div>
 
+              {/* Remarks Field */}
               <FormField
                 control={form.control}
                 name="remarks"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Remarks</FormLabel>
+                    <FormLabel className="text-xs">Remarks</FormLabel>
                     <FormControl>
                       <Textarea
                         placeholder="Any additional notes..."
                         className="resize-none"
+                        rows={2}
                         {...field}
                       />
                     </FormControl>
@@ -388,14 +398,14 @@ export default function ModifyStockPage({ params }: { params: { id: string } }) 
                 )}
               />
 
-              <div className="flex gap-4">
-                <Button type="submit" disabled={loading}>
+              <div className="flex gap-3 pt-2">
+                <Button type="submit" disabled={loading} size="sm">
                   {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Update Transaction
+                  Update
                 </Button>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
-                    <Button type="button" variant="destructive" disabled={deleting}>
+                    <Button type="button" variant="destructive" disabled={deleting} size="sm">
                       {deleting ? (
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       ) : (
@@ -423,7 +433,8 @@ export default function ModifyStockPage({ params }: { params: { id: string } }) 
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => router.push('/transactions')}
+                  onClick={() => router.push('/modify')}
+                  size="sm"
                 >
                   Cancel
                 </Button>

@@ -74,6 +74,7 @@ export async function PUT(
         price: parseFloat(body.price),
         tradeValue: tradeValue,
         brokerage: parseFloat(body.brokerage),
+        orderRef: body.orderRef || null,
         remarks: body.remarks || null,
       },
     })

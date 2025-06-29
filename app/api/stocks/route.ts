@@ -14,21 +14,93 @@ export async function GET(request: NextRequest) {
     const userid = searchParams.get('userid')
     const action = searchParams.get('action')
     const stock = searchParams.get('stock')
+    const page = parseInt(searchParams.get('page') || '1')
+    const limit = parseInt(searchParams.get('limit') || '100')
+    const dateFrom = searchParams.get('dateFrom')
+    const dateTo = searchParams.get('dateTo')
+    const mode = searchParams.get('mode') || 'paginated' // 'paginated' or 'all'
 
     const where: any = {}
-    if (userid) where.userid = userid
-    if (action) where.action = action
-    if (stock) where.stock = { contains: stock }
+    if (userid && userid !== 'all') where.userid = userid
+    if (action && action !== 'all') where.action = action
+    if (stock) where.stock = stock
+    if (dateFrom || dateTo) {
+      where.date = {}
+      if (dateFrom) where.date.gte = new Date(dateFrom)
+      if (dateTo) where.date.lte = new Date(dateTo)
+    }
 
+    // For backward compatibility, if mode is 'all', return all records
+    if (mode === 'all') {
+      const stocks = await prisma.stock.findMany({
+        where,
+        orderBy: [
+          { date: 'desc' },
+          { id: 'desc' }
+        ]
+      })
+      
+      // Fetch account information separately
+      const accountIds = [...new Set(stocks.map(s => s.userid))]
+      const accounts = await prisma.account.findMany({
+        where: { userid: { in: accountIds } }
+      })
+      
+      // Map accounts by userid for quick lookup
+      const accountMap = new Map(accounts.map(acc => [acc.userid, acc]))
+      
+      // Add account info to each stock
+      const stocksWithAccount = stocks.map(stock => ({
+        ...stock,
+        account: accountMap.get(stock.userid) || { userid: stock.userid, name: stock.userid }
+      }))
+      
+      return NextResponse.json(stocksWithAccount)
+    }
+
+    // Count total records for pagination
+    const totalCount = await prisma.stock.count({ where })
+
+    // Calculate pagination
+    const skip = (page - 1) * limit
+    const totalPages = Math.ceil(totalCount / limit)
+
+    // Fetch paginated data
     const stocks = await prisma.stock.findMany({
       where,
       orderBy: [
         { date: 'desc' },
         { id: 'desc' }
       ],
+      skip,
+      take: limit
     })
+    
+    // Fetch account information separately
+    const accountIds = [...new Set(stocks.map(s => s.userid))]
+    const accounts = await prisma.account.findMany({
+      where: { userid: { in: accountIds } }
+    })
+    
+    // Map accounts by userid for quick lookup
+    const accountMap = new Map(accounts.map(acc => [acc.userid, acc]))
+    
+    // Add account info to each stock
+    const stocksWithAccount = stocks.map(stock => ({
+      ...stock,
+      account: accountMap.get(stock.userid) || { userid: stock.userid, name: stock.userid }
+    }))
 
-    return NextResponse.json(stocks)
+    return NextResponse.json({
+      data: stocksWithAccount,
+      pagination: {
+        page,
+        limit,
+        totalCount,
+        totalPages,
+        hasMore: page < totalPages
+      }
+    })
   } catch (error) {
     console.error('Error fetching stocks:', error)
     return NextResponse.json({ error: 'Failed to fetch stocks' }, { status: 500 })

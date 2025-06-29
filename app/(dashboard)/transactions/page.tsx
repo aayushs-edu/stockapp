@@ -1,9 +1,8 @@
 // app/(dashboard)/transactions/page.tsx
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { format } from 'date-fns'
-import { useRouter } from 'next/navigation'
 import {
   ColumnDef,
   flexRender,
@@ -52,6 +51,7 @@ import { formatCurrency } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { EnhancedDatePicker } from '@/components/ui/enhanced-date-picker'
 import { useAccounts } from '@/components/providers/accounts-provider'
+import { EditTransactionDialog } from '@/components/transactions/edit-transaction-dialog'
 
 type Transaction = {
   id: number
@@ -106,9 +106,13 @@ export default function TransactionsPage() {
   const { activeAccounts, loading: accountsLoading } = useAccounts()
   const [data, setData] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
-  const router = useRouter()
+  
+  // Add state for edit dialog
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null)
+  const [editDialogOpen, setEditDialogOpen] = useState(false)
   
   // Add state for manual filters
   const [accountFilter, setAccountFilter] = useState<string>('')
@@ -118,15 +122,24 @@ export default function TransactionsPage() {
   const [stockSearchValue, setStockSearchValue] = useState('')
   const [dateFrom, setDateFrom] = useState<Date>()
   const [dateTo, setDateTo] = useState<Date>()
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(0)
+  const [totalCount, setTotalCount] = useState(0)
+  const [hasMore, setHasMore] = useState(false)
+  const pageSize = 100
+  
+  // AbortController for canceling requests
+  const abortControllerRef = useRef<AbortController | null>(null)
 
-  // Get unique stocks for autocomplete
-  const uniqueStocks = useMemo(() => {
-    const stocks = new Set(data.map(t => t.stock))
-    return Array.from(stocks).sort()
-  }, [data])
+  // All available stocks (loaded separately)
+  const [allStocks, setAllStocks] = useState<string[]>([])
+  const [loadingStocks, setLoadingStocks] = useState(false)
 
-  const handleEditTransaction = (id: number) => {
-    router.push(`/modify/${id}`)
+  const handleEditTransaction = (transaction: Transaction) => {
+    setEditingTransaction(transaction)
+    setEditDialogOpen(true)
   }
 
   const columns: ColumnDef<Transaction>[] = [
@@ -140,7 +153,7 @@ export default function TransactionsPage() {
             variant="ghost"
             size="icon"
             className="h-6 w-6 opacity-60 hover:opacity-100"
-            onClick={() => handleEditTransaction(row.original.id)}
+            onClick={() => handleEditTransaction(row.original)}
             title="Edit transaction"
           >
             <Edit2 className="h-3 w-3" />
@@ -259,68 +272,126 @@ export default function TransactionsPage() {
     },
   ]
 
-  // Filter data based on manual filters
-  const filteredData = useMemo(() => {
-    let filtered = [...data]
-    
-    // Apply account filter
-    if (accountFilter && accountFilter !== 'all') {
-      filtered = filtered.filter(item => item.userid === accountFilter)
-    }
-    
-    // Apply action filter
-    if (actionFilter !== 'all') {
-      filtered = filtered.filter(item => item.action === actionFilter)
-    }
-    
-    // Apply stock filter
-    if (stockFilter) {
-      filtered = filtered.filter(item => item.stock === stockFilter)
-    }
-    
-    // Apply date filters
-    if (dateFrom) {
-      filtered = filtered.filter(item => new Date(item.date) >= dateFrom)
-    }
-    if (dateTo) {
-      filtered = filtered.filter(item => new Date(item.date) <= dateTo)
-    }
-    
-    return filtered
-  }, [data, accountFilter, actionFilter, stockFilter, dateFrom, dateTo])
+  // Use data directly since filtering is done server-side
+  const filteredData = data
 
-  // Only fetch data when account is selected
+  // Reset pagination when filters change
   useEffect(() => {
+    setCurrentPage(1)
+    setData([])
     if (accountFilter) {
-      fetchData()
+      fetchData(1, true)
     }
-  }, [accountFilter])
-
-  const fetchData = async () => {
-    setLoading(true)
+  }, [accountFilter, actionFilter, stockFilter, dateFrom, dateTo])
+  
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+      }
+    }
+  }, [])
+  
+  // Fetch all unique stocks on mount
+  useEffect(() => {
+    fetchAllStocks()
+  }, [])
+  
+  const fetchAllStocks = async () => {
+    setLoadingStocks(true)
     try {
-      const response = await fetch(`/api/stocks`)
+      // Fetch with mode=all to get all stocks, but with a special flag to only return unique stocks
+      const response = await fetch('/api/stocks/unique')
+      if (response.ok) {
+        const stocks = await response.json()
+        setAllStocks(stocks.sort())
+      }
+    } catch (error) {
+      console.error('Failed to fetch stock list:', error)
+      // Fallback to empty array
+      setAllStocks([])
+    } finally {
+      setLoadingStocks(false)
+    }
+  }
+
+  const fetchData = async (page: number = 1, reset: boolean = false) => {
+    // Cancel any existing request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+    
+    // Create new AbortController for this request
+    const abortController = new AbortController()
+    abortControllerRef.current = abortController
+    
+    if (reset) {
+      setLoading(true)
+    } else {
+      setLoadingMore(true)
+    }
+    
+    try {
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: pageSize.toString(),
+      })
+      
+      // Add filters
+      if (accountFilter && accountFilter !== 'all') params.append('userid', accountFilter)
+      if (actionFilter && actionFilter !== 'all') params.append('action', actionFilter)
+      if (stockFilter) params.append('stock', stockFilter)
+      if (dateFrom) params.append('dateFrom', dateFrom.toISOString())
+      if (dateTo) params.append('dateTo', dateTo.toISOString())
+      
+      const response = await fetch(`/api/stocks?${params}`, {
+        signal: abortController.signal
+      })
       
       if (!response.ok) {
         console.error('Failed to fetch stocks:', response.status)
-        setData([])
+        if (reset) setData([])
         return
       }
       
       const result = await response.json()
-      console.log('API Response:', result)
       
-      if (Array.isArray(result)) {
-        setData(result)
+      if (result.data && Array.isArray(result.data)) {
+        if (reset) {
+          setData(result.data)
+        } else {
+          setData(prev => [...prev, ...result.data])
+        }
+        
+        // Update pagination info
+        setCurrentPage(result.pagination.page)
+        setTotalPages(result.pagination.totalPages)
+        setTotalCount(result.pagination.totalCount)
+        setHasMore(result.pagination.hasMore)
       } else {
         console.error('Unexpected response format:', result)
-        setData([])
+        if (reset) setData([])
       }
-    } catch (error) {
-      console.error('Failed to fetch transactions:', error)
-      setData([])
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        console.log('Request was cancelled')
+      } else {
+        console.error('Failed to fetch transactions:', error)
+        if (reset) setData([])
+      }
     } finally {
-      setLoading(false)
+      // Only update loading states if this request wasn't aborted
+      if (abortController.signal && !abortController.signal.aborted) {
+        setLoading(false)
+        setLoadingMore(false)
+      }
+    }
+  }
+
+  const loadMoreData = () => {
+    if (hasMore && !loadingMore) {
+      fetchData(currentPage + 1, false)
     }
   }
 
@@ -559,8 +630,16 @@ export default function TransactionsPage() {
                   role="combobox"
                   aria-expanded={stockSearchOpen}
                   className="justify-between"
+                  disabled={loadingStocks}
                 >
-                  {stockFilter || "Select stock..."}
+                  {loadingStocks ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Loading stocks...
+                    </>
+                  ) : (
+                    stockFilter || "Select stock..."
+                  )}
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-[200px] p-0">
@@ -583,27 +662,33 @@ export default function TransactionsPage() {
                     >
                       All Stocks
                     </Button>
-                    {uniqueStocks
-                      .filter(stock => 
-                        stock.toLowerCase().includes(stockSearchValue.toLowerCase())
-                      )
-                      .map((stock) => (
-                        <Button
-                          key={stock}
-                          variant="ghost"
-                          className="w-full justify-start px-2 py-1.5 text-sm hover:bg-accent"
-                          onClick={() => {
-                            setStockFilter(stock)
-                            setStockSearchOpen(false)
-                            setStockSearchValue('')
-                          }}
-                        >
-                          {stock}
-                        </Button>
-                      ))}
-                    {uniqueStocks.filter(stock => 
+                    {allStocks.length === 0 && !loadingStocks ? (
+                      <div className="px-2 py-6 text-center text-sm text-muted-foreground">
+                        No stocks available.
+                      </div>
+                    ) : (
+                      allStocks
+                        .filter(stock => 
+                          stock.toLowerCase().includes(stockSearchValue.toLowerCase())
+                        )
+                        .map((stock) => (
+                          <Button
+                            key={stock}
+                            variant="ghost"
+                            className="w-full justify-start px-2 py-1.5 text-sm hover:bg-accent"
+                            onClick={() => {
+                              setStockFilter(stock)
+                              setStockSearchOpen(false)
+                              setStockSearchValue('')
+                            }}
+                          >
+                            {stock}
+                          </Button>
+                        ))
+                    )}
+                    {allStocks.filter(stock => 
                       stock.toLowerCase().includes(stockSearchValue.toLowerCase())
-                    ).length === 0 && (
+                    ).length === 0 && allStocks.length > 0 && (
                       <div className="px-2 py-6 text-center text-sm text-muted-foreground">
                         No stock found.
                       </div>
@@ -718,13 +803,81 @@ export default function TransactionsPage() {
 
       {accountFilter && (
         <>
-          <div className="flex items-center justify-between">
-            <div className="flex-1 text-sm text-muted-foreground">
-              Showing {table.getFilteredRowModel().rows.length} of{" "}
-              {filteredData.length} row(s)
-              {(accountFilter !== 'all' || actionFilter !== 'all' || stockFilter || dateFrom || dateTo) && ' (filtered)'}
+          <div className="space-y-4">
+            {/* Show total count and load more button */}
+            <div className="flex items-center justify-between">
+              <div className="flex-1 text-sm text-muted-foreground">
+                Showing {data.length} of {totalCount} total transactions
+                {hasMore && ` (Page ${currentPage} of ${totalPages})`}
+              </div>
+              <div className="flex items-center gap-2">
+                {hasMore && (
+                  <>
+                    <Button
+                      onClick={loadMoreData}
+                      disabled={loadingMore}
+                      variant="outline"
+                      size="sm"
+                    >
+                      {loadingMore ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Loading...
+                        </>
+                      ) : (
+                        `Load Next ${pageSize}`
+                      )}
+                    </Button>
+                    <Button
+                      onClick={async () => {
+                        // Cancel any existing request
+                        if (abortControllerRef.current) {
+                          abortControllerRef.current.abort()
+                        }
+                        
+                        const abortController = new AbortController()
+                        abortControllerRef.current = abortController
+                        
+                        setLoading(true)
+                        try {
+                          const params = new URLSearchParams({ mode: 'all' })
+                          if (accountFilter && accountFilter !== 'all') params.append('userid', accountFilter)
+                          if (actionFilter && actionFilter !== 'all') params.append('action', actionFilter)
+                          if (stockFilter) params.append('stock', stockFilter)
+                          if (dateFrom) params.append('dateFrom', dateFrom.toISOString())
+                          if (dateTo) params.append('dateTo', dateTo.toISOString())
+                          
+                          const response = await fetch(`/api/stocks?${params}`, {
+                            signal: abortController.signal
+                          })
+                          if (response.ok) {
+                            const result = await response.json()
+                            setData(result)
+                            setHasMore(false)
+                          }
+                        } catch (error: any) {
+                          if (error.name !== 'AbortError') {
+                            console.error('Failed to load all data:', error)
+                          }
+                        } finally {
+                          if (!abortController.signal.aborted) {
+                            setLoading(false)
+                          }
+                        }
+                      }}
+                      disabled={loading || loadingMore}
+                      variant="secondary"
+                      size="sm"
+                    >
+                      Load All ({totalCount - data.length} remaining)
+                    </Button>
+                  </>
+                )}
+              </div>
             </div>
-            <div className="flex items-center space-x-6 lg:space-x-8">
+
+            {/* Table pagination controls */}
+            <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <p className="text-sm font-medium">Rows per page</p>
                 <Select
@@ -761,6 +914,10 @@ export default function TransactionsPage() {
                 >
                   Previous
                 </Button>
+                <div className="text-sm text-muted-foreground">
+                  Page {table.getState().pagination.pageIndex + 1} of{" "}
+                  {table.getPageCount()}
+                </div>
                 <Button
                   variant="outline"
                   size="sm"
@@ -886,6 +1043,16 @@ export default function TransactionsPage() {
       )}
         </>
       )}
+      
+      {/* Edit Transaction Dialog */}
+      <EditTransactionDialog
+        transaction={editingTransaction}
+        open={editDialogOpen}
+        onOpenChange={setEditDialogOpen}
+        onSuccess={() => {
+          fetchData() // Refresh the data after successful edit
+        }}
+      />
     </div>
   )
 }
