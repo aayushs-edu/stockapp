@@ -39,6 +39,12 @@ const routes = [
     description: 'Consolidated view'
   },
   {
+    href: '/holdings',
+    label: 'Holdings',
+    icon: BarChart3,
+    description: 'Current holdings'
+  },
+  {
     href: '/add-stock',
     label: 'Add',
     icon: PlusCircle,
