@@ -153,7 +153,7 @@ export default function ProfitLossPage() {
   const fetchData = async () => {
     setLoading(true)
     try {
-      const response = await fetch(`/api/stocks`)
+      const response = await fetch(`/api/stocks?mode=all`)
       
       if (!response.ok) {
         console.error('Failed to fetch stocks:', response.status)
