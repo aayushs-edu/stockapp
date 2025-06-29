@@ -40,8 +40,9 @@ export async function GET(request: NextRequest) {
         ]
       })
       
-      // Fetch account information separately
-      const accountIds = [...new Set(stocks.map(s => s.userid))]
+      // Fetch account information separately - Fix: Use Array.from() instead of spread operator
+      const uniqueUserIds = new Set(stocks.map(s => s.userid))
+      const accountIds = Array.from(uniqueUserIds)
       const accounts = await prisma.account.findMany({
         where: { userid: { in: accountIds } }
       })
@@ -76,8 +77,9 @@ export async function GET(request: NextRequest) {
       take: limit
     })
     
-    // Fetch account information separately
-    const accountIds = [...new Set(stocks.map(s => s.userid))]
+    // Fetch account information separately - Fix: Use Array.from() instead of spread operator
+    const uniqueUserIds = new Set(stocks.map(s => s.userid))
+    const accountIds = Array.from(uniqueUserIds)
     const accounts = await prisma.account.findMany({
       where: { userid: { in: accountIds } }
     })
