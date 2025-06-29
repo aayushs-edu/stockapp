@@ -367,11 +367,11 @@ export default function ProfitLossPage() {
         row.stock,
         row.account,
         row.accountName,
-        format(new Date(row.sellDate), 'dd-MMM-yy'),
+        format(new Date(row.sellDate), 'dd/MM/yyyy'),
         row.sellQty,
         row.sellPrice,
         row.sellValue.toFixed(2),
-        format(new Date(row.buyDate), 'dd-MMM-yy'),
+        format(new Date(row.buyDate), 'dd/MM/yyyy'),
         row.buyQty,
         row.buyPrice,
         row.matchedQty,
@@ -391,7 +391,7 @@ export default function ProfitLossPage() {
     const a = document.createElement('a')
     a.href = url
     const yearSuffix = yearFilter && yearFilter !== 'all' ? `_FY${yearFilter}-${(parseInt(yearFilter) + 1).toString().slice(-2)}` : ''
-    a.download = `profit_loss${yearSuffix}_${format(new Date(), 'yyyy-MM-dd')}.csv`
+    a.download = `profit_loss${yearSuffix}_${format(new Date(), 'dd-MM-yyyy')}.csv`
     a.click()
     window.URL.revokeObjectURL(url)
   }
@@ -796,11 +796,11 @@ export default function ProfitLossPage() {
                         </TableCell>
                       )}
                       <TableCell className="text-center font-mono text-xs py-1 px-2">#{row.sellId}</TableCell>
-                      <TableCell className="py-1 text-xs px-2">{format(new Date(row.sellDate), 'dd-MMM-yy')}</TableCell>
+                      <TableCell className="py-1 text-xs px-2">{format(new Date(row.sellDate), 'dd/MM/yyyy')}</TableCell>
                       <TableCell className="text-right py-1 text-xs px-2">{row.sellQty}</TableCell>
                       <TableCell className="text-right py-1 text-xs px-2">{formatCurrency(row.sellPrice)}</TableCell>
                       <TableCell className="text-center font-mono text-xs py-1 px-2">#{row.buyId}</TableCell>
-                      <TableCell className="py-1 text-xs px-2">{format(new Date(row.buyDate), 'dd-MMM-yy')}</TableCell>
+                      <TableCell className="py-1 text-xs px-2">{format(new Date(row.buyDate), 'dd/MM/yyyy')}</TableCell>
                       <TableCell className="text-right py-1 text-xs font-medium px-2">{row.matchedQty}</TableCell>
                       <TableCell className="text-right py-1 text-xs px-2">{formatCurrency(row.buyPrice)}</TableCell>
                       <TableCell className="py-1 px-2">

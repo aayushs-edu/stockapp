@@ -424,7 +424,7 @@ export default function SummaryBookPage() {
             transaction.stock,
             transaction.userid,
             account.name,
-            format(new Date(transaction.date), 'dd-MMM-yy'),
+            format(new Date(transaction.date), 'dd/MM/yyyy'),
             transaction.action,
             transaction.quantity,
             transaction.price,
@@ -444,7 +444,7 @@ export default function SummaryBookPage() {
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `summary_book_${format(new Date(), 'yyyy-MM-dd')}.csv`
+    a.download = `summary_book_${format(new Date(), 'dd-MM-yyyy')}.csv`
     a.click()
     window.URL.revokeObjectURL(url)
   }
@@ -895,7 +895,7 @@ export default function SummaryBookPage() {
                                             {account.remainingTransactions.map((tx, idx) => (
                                               <div key={`${tx.id}-${idx}`} className="text-xs bg-white dark:bg-gray-800 p-2 rounded border">
                                                 <div className="font-mono">#{tx.id}</div>
-                                                <div>{format(new Date(tx.date), 'dd-MMM-yy')}</div>
+                                                <div>{format(new Date(tx.date), 'dd/MM/yyyy')}</div>
                                                 <div className="font-semibold text-blue-700 dark:text-blue-300">
                                                   {tx.quantity} shares @ {formatCurrency(tx.price)}
                                                 </div>
@@ -960,7 +960,7 @@ export default function SummaryBookPage() {
                                                     <div className="text-gray-500 text-[10px]">SOLD</div>
                                                   )}
                                                 </TableCell>
-                                                <TableCell className="py-1">{format(new Date(transaction.date), 'dd-MMM-yy')}</TableCell>
+                                                <TableCell className="py-1">{format(new Date(transaction.date), 'dd/MM/yyyy')}</TableCell>
                                                 <TableCell className="py-1">
                                                   <Badge 
                                                     variant={transaction.action === 'Buy' ? 'default' : 'secondary'} 

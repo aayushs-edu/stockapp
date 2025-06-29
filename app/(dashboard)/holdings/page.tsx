@@ -59,15 +59,31 @@ type AccountSummary = {
   remainingTransactions?: Transaction[]
 }
 
-type StockSummary = {
+type FlattenedHolding = {
+  accountId: string
+  accountName: string
   stock: string
-  totalBuyQty: number
-  totalSellQty: number
-  totalNetQty: number
-  avgBuyPrice: number
-  totalBuyValue: number
+  buyDate: string
+  quantity: number
+  price: number
+  tradeValue: number
+  brokerage: number
+  transactionId: number
+  orderRef: string | null
+  remarks: string | null
+  source: string | null
+  netValue: number
+}
+
+type AccountStockSummary = {
+  accountId: string
+  accountName: string
+  stock: string
+  totalQuantity: number
+  avgPrice: number
+  totalValue: number
   totalBrokerage: number
-  accounts: AccountSummary[]
+  holdings: FlattenedHolding[]
 }
 
 export default function HoldingsPage() {
@@ -75,15 +91,10 @@ export default function HoldingsPage() {
   const [data, setData] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(false)
   const [accountFilter, setAccountFilter] = useState<string>('')
-  const [expandedStocks, setExpandedStocks] = useState<Set<string>>(new Set())
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set())
+  const [hasInitialized, setHasInitialized] = useState(false)
 
-  useEffect(() => {
-    if (!accountFilter && activeAccounts.length > 0) {
-      setAccountFilter('active-accounts')
-    }
-  }, [activeAccounts, accountFilter])
-
+  // Remove auto-selection of active-accounts
   useEffect(() => {
     if (accountFilter) {
       fetchData()
@@ -151,171 +162,133 @@ export default function HoldingsPage() {
     return remainingTransactions
   }
 
-  // Process data into hierarchical structure - ONLY HOLDINGS
-  const stockSummaries = useMemo(() => {
-    const summaryMap = new Map<string, StockSummary>()
+  // Process data into flattened structure - ONLY HOLDINGS
+  const flattenedData = useMemo(() => {
+    const accountStockMap = new Map<string, AccountStockSummary>()
+    const flattenedHoldings: FlattenedHolding[] = []
+    // First, group transactions by account and stock
+    const accountStockTransactions = new Map<string, Transaction[]>()
     
-    // Group transactions by stock and account
     data.forEach(transaction => {
-      let stockSummary = summaryMap.get(transaction.stock)
-      if (!stockSummary) {
-        stockSummary = {
-          stock: transaction.stock,
-          totalBuyQty: 0,
-          totalSellQty: 0,
-          totalNetQty: 0,
-          avgBuyPrice: 0,
-          totalBuyValue: 0,
-          totalBrokerage: 0,
-          accounts: []
-        }
-        summaryMap.set(transaction.stock, stockSummary)
+      const key = `${transaction.userid}-${transaction.stock}`
+      if (!accountStockTransactions.has(key)) {
+        accountStockTransactions.set(key, [])
       }
-
-      // Find or create account summary
-      let accountSummary = stockSummary.accounts.find(a => a.userid === transaction.userid)
-      if (!accountSummary) {
-        accountSummary = {
-          userid: transaction.userid,
-          name: transaction.account?.name || transaction.userid,
-          buyQty: 0,
-          sellQty: 0,
-          netQty: 0,
-          avgBuyPrice: 0,
-          totalBuyValue: 0,
-          totalBrokerage: 0,
-          transactions: []
-        }
-        stockSummary.accounts.push(accountSummary)
-      }
-
-      // Add transaction to account
-      accountSummary.transactions.push(transaction)
-
-      // Update account summary with rounding
-      if (transaction.action === 'Buy') {
-        accountSummary.buyQty = Math.round((accountSummary.buyQty + transaction.quantity) * 100) / 100
-        accountSummary.totalBuyValue = Math.round((accountSummary.totalBuyValue + transaction.tradeValue) * 100) / 100
-      } else {
-        accountSummary.sellQty = Math.round((accountSummary.sellQty + transaction.quantity) * 100) / 100
-      }
-      accountSummary.totalBrokerage = Math.round((accountSummary.totalBrokerage + transaction.brokerage) * 100) / 100
-      accountSummary.netQty = Math.round((accountSummary.buyQty - accountSummary.sellQty) * 100) / 100
-      accountSummary.avgBuyPrice = accountSummary.buyQty > 0 ? Math.round((accountSummary.totalBuyValue / accountSummary.buyQty) * 100) / 100 : 0
+      accountStockTransactions.get(key)!.push(transaction)
     })
 
-    // Calculate remaining transactions for each account
-    summaryMap.forEach((stockSummary) => {
-      stockSummary.accounts.forEach(account => {
-        const buyTransactions = account.transactions.filter(t => t.action === 'Buy')
-        account.remainingTransactions = calculateRemainingTransactions(buyTransactions, account.sellQty)
-      })
-    })
-
-    // Filter out accounts with no remaining shares
-    summaryMap.forEach((stockSummary) => {
-      stockSummary.accounts = stockSummary.accounts.filter(account => account.netQty > 0)
-    })
-
-    // Calculate stock-level summaries and filter stocks with no holdings
-    const holdingStocks = new Map<string, StockSummary>()
-    
-    summaryMap.forEach((stockSummary, stockName) => {
-      if (stockSummary.accounts.length > 0) {
-        stockSummary.accounts.forEach(account => {
-          stockSummary.totalBuyQty = Math.round((stockSummary.totalBuyQty + account.buyQty) * 100) / 100
-          stockSummary.totalSellQty = Math.round((stockSummary.totalSellQty + account.sellQty) * 100) / 100
-          stockSummary.totalBuyValue = Math.round((stockSummary.totalBuyValue + account.totalBuyValue) * 100) / 100
-          stockSummary.totalBrokerage = Math.round((stockSummary.totalBrokerage + account.totalBrokerage) * 100) / 100
-        })
-        stockSummary.totalNetQty = Math.round((stockSummary.totalBuyQty - stockSummary.totalSellQty) * 100) / 100
-        stockSummary.avgBuyPrice = stockSummary.totalBuyQty > 0 ? Math.round((stockSummary.totalBuyValue / stockSummary.totalBuyQty) * 100) / 100 : 0
-
-        // Sort transactions within each account by date descending
-        stockSummary.accounts.forEach(account => {
-          account.transactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-        })
-        
-        holdingStocks.set(stockName, stockSummary)
-      }
-    })
-
-    // Convert to array and sort
-    let summaries = Array.from(holdingStocks.values())
-    
-    // Filter based on account filter
-    if (accountFilter && accountFilter !== 'all-accounts' && accountFilter !== 'active-accounts') {
-      summaries = summaries.filter(stock => 
-        stock.accounts.some(account => account.userid === accountFilter)
-      ).map(stock => ({
-        ...stock,
-        accounts: stock.accounts.filter(account => account.userid === accountFilter)
-      }))
+    // Process each account-stock combination
+    accountStockTransactions.forEach((transactions, key) => {
+      const [accountId, ...stockParts] = key.split('-')
+      const stock = stockParts.join('-')
+      const accountName = transactions[0]?.account?.name || accountId
       
-      // Recalculate stock-level summaries for the filtered account
-      summaries = summaries.map(stock => {
-        const totalBuyQty = stock.accounts.reduce((sum, acc) => sum + acc.buyQty, 0)
-        const totalSellQty = stock.accounts.reduce((sum, acc) => sum + acc.sellQty, 0)
-        const totalBuyValue = stock.accounts.reduce((sum, acc) => sum + acc.totalBuyValue, 0)
-        const totalBrokerage = stock.accounts.reduce((sum, acc) => sum + acc.totalBrokerage, 0)
-        
-        return {
-          ...stock,
-          totalBuyQty,
-          totalSellQty,
-          totalNetQty: totalBuyQty - totalSellQty,
-          totalBuyValue,
-          totalBrokerage,
-          avgBuyPrice: totalBuyQty > 0 ? totalBuyValue / totalBuyQty : 0
-        }
+      // Calculate buy/sell quantities
+      let buyQty = 0
+      let sellQty = 0
+      let totalBuyValue = 0
+      let totalBrokerage = 0
+      
+      const buyTransactions = transactions.filter(t => t.action === 'Buy')
+      const sellTransactions = transactions.filter(t => t.action === 'Sell')
+      
+      buyTransactions.forEach(t => {
+        buyQty += t.quantity
+        totalBuyValue += t.tradeValue
+        totalBrokerage += t.brokerage
       })
+      
+      sellTransactions.forEach(t => {
+        sellQty += t.quantity
+        totalBrokerage += t.brokerage
+      })
+      
+      const netQty = Math.round((buyQty - sellQty) * 100) / 100
+      
+      // Only process if there are holdings
+      if (netQty > 0) {
+        // Calculate remaining transactions using FIFO
+        const remainingTransactions = calculateRemainingTransactions(buyTransactions, sellQty)
+        
+        // Create flattened holdings from remaining transactions
+        remainingTransactions.forEach(tx => {
+          const netValue = tx.tradeValue + tx.brokerage // For Buy transactions
+          flattenedHoldings.push({
+            accountId,
+            accountName,
+            stock,
+            buyDate: tx.date,
+            quantity: tx.quantity,
+            price: tx.price,
+            tradeValue: tx.tradeValue,
+            brokerage: tx.brokerage,
+            transactionId: tx.id,
+            orderRef: tx.orderRef,
+            remarks: tx.remarks,
+            source: tx.source,
+            netValue
+          })
+        })
+        
+        // Create account-stock summary
+        const avgPrice = buyQty > 0 ? totalBuyValue / buyQty : 0
+        const summaryKey = `${accountId}-${stock}`
+        
+        accountStockMap.set(summaryKey, {
+          accountId,
+          accountName,
+          stock,
+          totalQuantity: netQty,
+          avgPrice: Math.round(avgPrice * 100) / 100,
+          totalValue: Math.round(totalBuyValue * 100) / 100,
+          totalBrokerage: Math.round(totalBrokerage * 100) / 100,
+          holdings: flattenedHoldings.filter(h => h.accountId === accountId && h.stock === stock)
+        })
+      }
+    })
+
+    // Filter based on account filter
+    let filteredHoldings = flattenedHoldings
+    let filteredSummaries = Array.from(accountStockMap.values())
+    
+    if (accountFilter && accountFilter !== 'all-accounts' && accountFilter !== 'active-accounts') {
+      filteredHoldings = flattenedHoldings.filter(h => h.accountId === accountFilter)
+      filteredSummaries = filteredSummaries.filter(s => s.accountId === accountFilter)
     } else if (accountFilter === 'active-accounts') {
       const activeAccountIds = new Set(activeAccounts.map(acc => acc.userid))
-      summaries = summaries.filter(stock => 
-        stock.accounts.some(account => activeAccountIds.has(account.userid))
-      ).map(stock => ({
-        ...stock,
-        accounts: stock.accounts.filter(account => activeAccountIds.has(account.userid))
-      }))
-      
-      // Recalculate stock-level summaries for active accounts only
-      summaries = summaries.map(stock => {
-        const totalBuyQty = stock.accounts.reduce((sum, acc) => sum + acc.buyQty, 0)
-        const totalSellQty = stock.accounts.reduce((sum, acc) => sum + acc.sellQty, 0)
-        const totalBuyValue = stock.accounts.reduce((sum, acc) => sum + acc.totalBuyValue, 0)
-        const totalBrokerage = stock.accounts.reduce((sum, acc) => sum + acc.totalBrokerage, 0)
-        
-        return {
-          ...stock,
-          totalBuyQty,
-          totalSellQty,
-          totalNetQty: totalBuyQty - totalSellQty,
-          totalBuyValue,
-          totalBrokerage,
-          avgBuyPrice: totalBuyQty > 0 ? totalBuyValue / totalBuyQty : 0
-        }
-      })
+      filteredHoldings = flattenedHoldings.filter(h => activeAccountIds.has(h.accountId))
+      filteredSummaries = filteredSummaries.filter(s => activeAccountIds.has(s.accountId))
     }
     
-    return summaries.sort((a, b) => a.stock.localeCompare(b.stock))
+    // Sort by account, stock, buy date ascending
+    filteredHoldings.sort((a, b) => {
+      if (a.accountId !== b.accountId) return a.accountId.localeCompare(b.accountId)
+      if (a.stock !== b.stock) return a.stock.localeCompare(b.stock)
+      return new Date(a.buyDate).getTime() - new Date(b.buyDate).getTime()
+    })
+    
+    return {
+      holdings: filteredHoldings,
+      summaries: filteredSummaries
+    }
   }, [data, accountFilter, activeAccounts])
 
-  const toggleStockExpansion = (stock: string) => {
-    const newExpanded = new Set(expandedStocks)
-    if (newExpanded.has(stock)) {
-      newExpanded.delete(stock)
-      // Also collapse all accounts under this stock
-      const accountKeys = Array.from(expandedAccounts).filter(key => key.startsWith(`${stock}-`))
-      accountKeys.forEach(key => expandedAccounts.delete(key))
-      setExpandedAccounts(new Set(expandedAccounts))
-    } else {
-      newExpanded.add(stock)
+  // Auto-expand all account-stock combinations when data changes
+  useEffect(() => {
+    if (flattenedData.summaries.length > 0 && !hasInitialized) {
+      const allKeys = flattenedData.summaries.map(s => `${s.accountId}-${s.stock}`)
+      setExpandedAccounts(new Set(allKeys))
+      setHasInitialized(true)
     }
-    setExpandedStocks(newExpanded)
-  }
+  }, [flattenedData.summaries, hasInitialized])
 
-  const toggleAccountExpansion = (stock: string, userid: string) => {
-    const key = `${stock}-${userid}`
+  // Reset initialization when account filter changes
+  useEffect(() => {
+    setHasInitialized(false)
+  }, [accountFilter])
+
+  const toggleAccountExpansion = (accountId: string, stock: string) => {
+    const key = `${accountId}-${stock}`
     const newExpanded = new Set(expandedAccounts)
     if (newExpanded.has(key)) {
       newExpanded.delete(key)
@@ -327,27 +300,26 @@ export default function HoldingsPage() {
 
   const exportToCSV = () => {
     const csvRows = []
-    const headers = ['Stock', 'Account', 'Account Name', 'Remaining Shares', 'Avg Buy Price', 'Current Investment', 'Purchase Date', 'Purchase Price']
+    const headers = ['ID', 'User ID', 'Date', 'Stock', 'Action', 'Source', 'Quantity', 'Price', 'Trade Value', 'Brokerage', 'Net Value', 'Order Ref', 'Remarks']
     csvRows.push(headers.join(','))
 
-    stockSummaries.forEach(stock => {
-      stock.accounts.forEach(account => {
-        if (account.remainingTransactions) {
-          account.remainingTransactions.forEach(transaction => {
-            const row = [
-              stock.stock,
-              account.userid,
-              account.name,
-              transaction.quantity,
-              account.avgBuyPrice.toFixed(2),
-              (transaction.quantity * transaction.price).toFixed(2),
-              format(new Date(transaction.date), 'dd-MMM-yy'),
-              transaction.price.toFixed(2)
-            ]
-            csvRows.push(row.join(','))
-          })
-        }
-      })
+    flattenedData.holdings.forEach(holding => {
+      const row = [
+        holding.transactionId,
+        holding.accountId,
+        format(new Date(holding.buyDate), 'dd/MM/yyyy'),
+        holding.stock,
+        'Buy', // Holdings are always Buy transactions
+        holding.source || '',
+        holding.quantity.toFixed(2),
+        holding.price.toFixed(2),
+        holding.tradeValue.toFixed(2),
+        holding.brokerage.toFixed(2),
+        holding.netValue.toFixed(2),
+        holding.orderRef || '',
+        holding.remarks || ''
+      ]
+      csvRows.push(row.join(','))
     })
 
     const csvContent = csvRows.join('\n')
@@ -355,7 +327,7 @@ export default function HoldingsPage() {
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `holdings_${format(new Date(), 'yyyy-MM-dd')}.csv`
+    a.download = `holdings_${format(new Date(), 'dd-MM-yyyy')}.csv`
     a.click()
     window.URL.revokeObjectURL(url)
   }
@@ -363,17 +335,19 @@ export default function HoldingsPage() {
   const calculateOverallSummary = () => {
     let currentInvestment = 0
     let totalShares = 0
-    let uniqueStocks = stockSummaries.length
+    const uniqueStocks = new Set(flattenedData.holdings.map(h => h.stock)).size
+    const uniqueAccounts = new Set(flattenedData.holdings.map(h => h.accountId)).size
 
-    stockSummaries.forEach(stock => {
-      currentInvestment += stock.totalNetQty * stock.avgBuyPrice
-      totalShares += stock.totalNetQty
+    flattenedData.summaries.forEach(summary => {
+      currentInvestment += summary.totalQuantity * summary.avgPrice
+      totalShares += summary.totalQuantity
     })
 
     return {
       currentInvestment,
       totalShares,
-      uniqueStocks
+      uniqueStocks,
+      uniqueAccounts
     }
   }
 
@@ -421,14 +395,14 @@ export default function HoldingsPage() {
             </p>
           )}
         </div>
-        <Button onClick={exportToCSV} disabled={!accountFilter || stockSummaries.length === 0}>
+        <Button onClick={exportToCSV} disabled={!accountFilter || flattenedData.holdings.length === 0}>
           <Download className="mr-2 h-4 w-4" />
           Export CSV
         </Button>
       </div>
 
       {/* Summary Stats */}
-      {accountFilter && stockSummaries.length > 0 && (
+      {accountFilter && flattenedData.holdings.length > 0 && (
         <div className="grid gap-3 md:grid-cols-3">
           <Card>
             <CardHeader className="pb-2">
@@ -519,222 +493,135 @@ export default function HoldingsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-12"></TableHead>
-                  <TableHead>Stock / Account</TableHead>
-                  <TableHead className="text-right">Shares (Held/Bought)</TableHead>
-                  <TableHead className="text-right">Avg Buy Price</TableHead>
-                  <TableHead className="text-right">Current Investment</TableHead>
-                  <TableHead className="text-right">Total Brokerage</TableHead>
+                  <TableHead className="w-16">ID</TableHead>
+                  <TableHead>User ID</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Stock</TableHead>
+                  <TableHead>Action</TableHead>
+                  <TableHead>Source</TableHead>
+                  <TableHead className="text-right">Quantity</TableHead>
+                  <TableHead className="text-right">Price</TableHead>
+                  <TableHead className="text-right">Trade Value</TableHead>
+                  <TableHead className="text-right">Brokerage</TableHead>
+                  <TableHead className="text-right">Net Value</TableHead>
+                  <TableHead>Order Ref</TableHead>
+                  <TableHead>Remarks</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="h-24 text-center">
+                    <TableCell colSpan={14} className="h-24 text-center">
                       Loading...
                     </TableCell>
                   </TableRow>
-                ) : stockSummaries.length === 0 ? (
+                ) : flattenedData.holdings.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="h-24 text-center">
+                    <TableCell colSpan={14} className="h-24 text-center">
                       No holdings found.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  stockSummaries.map((stock) => (
-                    <>
-                      {/* Stock Summary Row */}
-                      <TableRow 
-                        key={stock.stock}
-                        className="font-semibold bg-muted/50 hover:bg-muted cursor-pointer"
-                        onClick={() => toggleStockExpansion(stock.stock)}
-                      >
-                        <TableCell>
-                          {expandedStocks.has(stock.stock) ? (
-                            <ChevronDown className="h-4 w-4" />
-                          ) : (
-                            <ChevronRight className="h-4 w-4" />
-                          )}
-                        </TableCell>
-                        <TableCell className="font-semibold">{stock.stock}</TableCell>
-                        <TableCell className="text-right">
-                          <span className="font-semibold text-blue-700 dark:text-blue-300">
-                            {formatQuantity(stock.totalNetQty)}
-                          </span>
-                          <span className="text-muted-foreground mx-1">/</span>
-                          <span className="text-muted-foreground">
-                            {formatQuantity(stock.totalBuyQty)}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right">{formatCurrency(stock.avgBuyPrice)}</TableCell>
-                        <TableCell className="text-right font-semibold text-amber-600">
-                          {formatCurrency(stock.totalNetQty * stock.avgBuyPrice)}
-                        </TableCell>
-                        <TableCell className="text-right">{formatCurrency(stock.totalBrokerage)}</TableCell>
-                      </TableRow>
-
-                      {/* Account Rows */}
-                      {expandedStocks.has(stock.stock) && stock.accounts.map((account) => {
-                        const accountKey = `${stock.stock}-${account.userid}`
-                        const isAccountExpanded = expandedAccounts.has(accountKey)
+                  <>
+                    {/* Group holdings by account-stock and show summaries with details */}
+                    {(() => {
+                      let lastAccountId: string | null = null
+                      let lastStock: string | null = null
+                      
+                      return flattenedData.holdings.map((holding, index) => {
+                        const isNewAccountStock = holding.accountId !== lastAccountId || holding.stock !== lastStock
+                        const accountStockKey = `${holding.accountId}-${holding.stock}`
+                        const summary = flattenedData.summaries.find(s => s.accountId === holding.accountId && s.stock === holding.stock)
+                        const isExpanded = expandedAccounts.has(accountStockKey)
                         
-                        return (
-                          <>
+                        const result = []
+                        
+                        // Add summary row for new account-stock combination
+                        if (isNewAccountStock && summary) {
+                          result.push(
                             <TableRow 
-                              key={accountKey}
-                              className="hover:bg-muted/30 cursor-pointer"
-                              onClick={() => toggleAccountExpansion(stock.stock, account.userid)}
+                              key={`summary-${accountStockKey}`}
+                              className="font-semibold bg-blue-50 dark:bg-blue-950/30 hover:bg-blue-100 dark:hover:bg-blue-950/40 cursor-pointer border-b border-blue-200 dark:border-blue-800"
+                              onClick={() => toggleAccountExpansion(holding.accountId, holding.stock)}
                             >
-                              <TableCell className="pl-8">
-                                {isAccountExpanded ? (
-                                  <ChevronDown className="h-3 w-3" />
-                                ) : (
-                                  <ChevronRight className="h-3 w-3" />
-                                )}
-                              </TableCell>
-                              <TableCell className="pl-8">
-                                <div className="flex items-center gap-2">
-                                  <span>{account.userid}</span>
-                                  <span className="text-sm text-muted-foreground">({account.name})</span>
+                              <TableCell>
+                                <div className="flex items-center justify-center w-6 h-6 rounded bg-blue-100 dark:bg-blue-900/50">
+                                  {isExpanded ? (
+                                    <ChevronDown className="h-4 w-4 text-blue-700 dark:text-blue-300" />
+                                  ) : (
+                                    <ChevronRight className="h-4 w-4 text-blue-700 dark:text-blue-300" />
+                                  )}
                                 </div>
                               </TableCell>
-                              <TableCell className="text-right">
-                                <span className="text-blue-700 dark:text-blue-300">
-                                  {formatQuantity(account.netQty)}
-                                </span>
-                                <span className="text-muted-foreground mx-1">/</span>
-                                <span className="text-muted-foreground text-sm">
-                                  {formatQuantity(account.buyQty)}
-                                </span>
+                              <TableCell colSpan={2}>
+                                <div className="flex flex-col">
+                                  <span>{holding.accountId}</span>
+                                  <span className="text-xs text-muted-foreground">{holding.accountName}</span>
+                                </div>
                               </TableCell>
-                              <TableCell className="text-right">{formatCurrency(account.avgBuyPrice)}</TableCell>
-                              <TableCell className="text-right text-amber-600">
-                                {formatCurrency(account.netQty * account.avgBuyPrice)}
+                              <TableCell>
+                                <Badge variant="outline" className="text-xs bg-blue-50 dark:bg-blue-950/50 border-blue-300 dark:border-blue-700">
+                                  {summary.holdings.length} lots
+                                </Badge>
                               </TableCell>
-                              <TableCell className="text-right">{formatCurrency(account.totalBrokerage)}</TableCell>
+                              <TableCell>
+                                <span className="font-semibold text-blue-900 dark:text-blue-100">{holding.stock}</span>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="default" className="text-xs">Buy</Badge>
+                              </TableCell>
+                              <TableCell>-</TableCell>
+                              <TableCell className="text-right font-semibold text-blue-700 dark:text-blue-300">
+                                {formatQuantity(summary.totalQuantity)}
+                              </TableCell>
+                              <TableCell className="text-right font-medium">{formatCurrency(summary.avgPrice)}</TableCell>
+                              <TableCell className="text-right font-semibold text-amber-600">
+                                {formatCurrency(summary.totalValue)}
+                              </TableCell>
+                              <TableCell className="text-right font-medium">{formatCurrency(summary.totalBrokerage)}</TableCell>
+                              <TableCell className="text-right font-semibold text-red-600">
+                                {formatCurrency(summary.totalValue + summary.totalBrokerage)}
+                              </TableCell>
+                              <TableCell>-</TableCell>
+                              <TableCell>-</TableCell>
                             </TableRow>
-
-                            {/* Remaining Shares Details */}
-                            {isAccountExpanded && account.remainingTransactions && (
-                              <TableRow>
-                                <TableCell colSpan={6} className="p-0">
-                                  <div className="bg-blue-50 dark:bg-blue-950/20 p-4">
-                                    <h4 className="text-sm font-semibold text-blue-800 dark:text-blue-200 mb-3">
-                                      Transaction Details for {stock.stock}
-                                    </h4>
-                                    <div className="space-y-4">
-                                      <h5 className="text-xs font-medium text-blue-800 dark:text-blue-200">All Transactions for {account.userid}:</h5>
-                                      <Table>
-                                        <TableHeader>
-                                          <TableRow className="text-xs">
-                                            <TableHead className="w-16">ID</TableHead>
-                                            <TableHead>Date</TableHead>
-                                            <TableHead>Action</TableHead>
-                                            <TableHead>Source</TableHead>
-                                            <TableHead className="text-right">Quantity</TableHead>
-                                            <TableHead className="text-right">Price</TableHead>
-                                            <TableHead className="text-right">Trade Value</TableHead>
-                                            <TableHead className="text-right">Brokerage</TableHead>
-                                            <TableHead className="text-right">Net Value</TableHead>
-                                            <TableHead>Order Ref</TableHead>
-                                            <TableHead>Remarks</TableHead>
-                                          </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                          {account.transactions.map((tx) => {
-                                            const netValue = tx.action === 'Buy' 
-                                              ? tx.tradeValue + tx.brokerage 
-                                              : tx.tradeValue - tx.brokerage
-                                            const remainingTx = account.remainingTransactions?.find(rt => rt.id === tx.id)
-                                            const isHolding = tx.action === 'Buy' && remainingTx
-                                            const isPartial = isHolding && remainingTx.originalQuantity && remainingTx.quantity < remainingTx.originalQuantity
-                                            
-                                            return (
-                                              <TableRow 
-                                                key={tx.id} 
-                                                className={cn(
-                                                  "text-xs",
-                                                  isHolding && "bg-blue-50/50 dark:bg-blue-950/20",
-                                                  isPartial && "bg-amber-50/50 dark:bg-amber-950/20"
-                                                )}
-                                              >
-                                                <TableCell className="font-mono">
-                                                  #{tx.id}
-                                                </TableCell>
-                                                <TableCell>{format(new Date(tx.date), 'dd-MMM-yy')}</TableCell>
-                                                <TableCell>
-                                                  <Badge 
-                                                    variant={tx.action === 'Buy' ? 'default' : 'secondary'}
-                                                    className="text-xs"
-                                                  >
-                                                    {tx.action}
-                                                  </Badge>
-                                                </TableCell>
-                                                <TableCell>{tx.source || '-'}</TableCell>
-                                                <TableCell className="text-right">
-                                                  {formatQuantity(tx.quantity)}
-                                                  {isHolding && remainingTx && (
-                                                    <div className="text-[10px] text-blue-600 dark:text-blue-400">
-                                                      {formatQuantity(remainingTx.quantity)} left
-                                                    </div>
-                                                  )}
-                                                </TableCell>
-                                                <TableCell className="text-right">{formatCurrency(tx.price)}</TableCell>
-                                                <TableCell className="text-right">{formatCurrency(tx.tradeValue)}</TableCell>
-                                                <TableCell className="text-right">{formatCurrency(tx.brokerage)}</TableCell>
-                                                <TableCell className={cn(
-                                                  "text-right font-medium",
-                                                  tx.action === 'Buy' ? "text-red-600" : "text-green-600"
-                                                )}>
-                                                  {tx.action === 'Buy' ? '-' : '+'}{formatCurrency(netValue)}
-                                                </TableCell>
-                                                <TableCell className="text-[10px]">{tx.orderRef || '-'}</TableCell>
-                                                <TableCell className="text-[10px] max-w-[150px] truncate" title={tx.remarks || ''}>
-                                                  {tx.remarks || '-'}
-                                                </TableCell>
-                                              </TableRow>
-                                            )
-                                          })}
-                                        </TableBody>
-                                      </Table>
-                                      
-                                      {/* Separate section for remaining shares summary */}
-                                      {account.remainingTransactions && account.remainingTransactions.length > 0 && (
-                                        <div className="mt-4 p-3 bg-blue-100 dark:bg-blue-950/30 rounded-lg">
-                                          <h5 className="text-xs font-semibold text-blue-800 dark:text-blue-200 mb-2">
-                                            Remaining Shares Distribution (FIFO):
-                                          </h5>
-                                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                                            {account.remainingTransactions.map((tx, idx) => (
-                                              <div key={`${tx.id}-${idx}`} className="text-xs bg-white dark:bg-gray-800 p-2 rounded border border-blue-200 dark:border-blue-800">
-                                                <div className="flex justify-between items-start">
-                                                  <div>
-                                                    <div className="font-mono text-[10px] text-muted-foreground">#{tx.id}</div>
-                                                    <div className="text-[11px]">{format(new Date(tx.date), 'dd-MMM-yy')}</div>
-                                                  </div>
-                                                  <div className="text-right">
-                                                    <div className="font-semibold text-blue-700 dark:text-blue-300">
-                                                      {formatQuantity(tx.quantity)} shares
-                                                    </div>
-                                                    <div className="text-[11px] text-muted-foreground">
-                                                      @ {formatCurrency(tx.price)}
-                                                    </div>
-                                                  </div>
-                                                </div>
-                                              </div>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                </TableCell>
-                              </TableRow>
-                            )}
-                          </>
-                        )
-                      })}
-                    </>
-                  ))
+                          )
+                          lastAccountId = holding.accountId
+                          lastStock = holding.stock
+                        }
+                        
+                        // Add detail row if expanded
+                        if (isExpanded) {
+                          result.push(
+                            <TableRow key={`detail-${holding.transactionId}`} className="hover:bg-gray-50 dark:hover:bg-gray-900/20 text-sm">
+                              <TableCell></TableCell>
+                              <TableCell className="font-mono text-xs">#{holding.transactionId}</TableCell>
+                              <TableCell>{holding.accountId}</TableCell>
+                              <TableCell>{format(new Date(holding.buyDate), 'dd/MM/yyyy')}</TableCell>
+                              <TableCell>{holding.stock}</TableCell>
+                              <TableCell>
+                                <Badge variant="default" className="text-xs">Buy</Badge>
+                              </TableCell>
+                              <TableCell className="text-xs">{holding.source || '-'}</TableCell>
+                              <TableCell className="text-right">{formatQuantity(holding.quantity)}</TableCell>
+                              <TableCell className="text-right">{formatCurrency(holding.price)}</TableCell>
+                              <TableCell className="text-right">{formatCurrency(holding.tradeValue)}</TableCell>
+                              <TableCell className="text-right">{formatCurrency(holding.brokerage)}</TableCell>
+                              <TableCell className="text-right text-red-600 font-medium">
+                                -{formatCurrency(holding.netValue)}
+                              </TableCell>
+                              <TableCell className="text-xs">{holding.orderRef || '-'}</TableCell>
+                              <TableCell className="text-xs max-w-[150px] truncate" title={holding.remarks || ''}>
+                                {holding.remarks || '-'}
+                              </TableCell>
+                            </TableRow>
+                          )
+                        }
+                        
+                        return result
+                      })
+                    })()}
+                  </>
                 )}
               </TableBody>
             </Table>

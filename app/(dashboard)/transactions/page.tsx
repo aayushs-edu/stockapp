@@ -179,7 +179,7 @@ export default function TransactionsPage() {
           </Button>
         )
       },
-      cell: ({ row }) => format(new Date(row.getValue('date')), 'dd-MMM-yy'),
+      cell: ({ row }) => format(new Date(row.getValue('date')), 'dd/MM/yyyy'),
     },
     {
       accessorKey: 'stock',
@@ -420,7 +420,7 @@ export default function TransactionsPage() {
     const headers = ['ID', 'Date', 'Stock', 'Action', 'Source', 'Quantity', 'Price', 'Trade Value', 'Brokerage', 'Net Value', 'Order Ref', 'Remarks']
     const rows = csvData.map((row: Transaction) => [
       row.id,
-      format(new Date(row.date), 'dd-MMM-yy'),
+      format(new Date(row.date), 'dd/MM/yyyy'),
       row.stock,
       row.action,
       row.source || '',
@@ -442,7 +442,7 @@ export default function TransactionsPage() {
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `transactions_${format(new Date(), 'yyyy-MM-dd')}.csv`
+    a.download = `transactions_${format(new Date(), 'dd-MM-yyyy')}.csv`
     a.click()
   }
 
