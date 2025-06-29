@@ -619,60 +619,113 @@ export default function HoldingsPage() {
                                 <TableCell colSpan={6} className="p-0">
                                   <div className="bg-blue-50 dark:bg-blue-950/20 p-4">
                                     <h4 className="text-sm font-semibold text-blue-800 dark:text-blue-200 mb-3">
-                                      Remaining Shares Distribution (FIFO):
+                                      Transaction Details for {stock.stock}
                                     </h4>
-                                    <Table>
-                                      <TableHeader>
-                                        <TableRow>
-                                          <TableHead className="w-20">ID</TableHead>
-                                          <TableHead>Purchase Date</TableHead>
-                                          <TableHead className="text-right">Quantity (Held/Bought)</TableHead>
-                                          <TableHead className="text-right">Purchase Price</TableHead>
-                                          <TableHead className="text-right">Cost Basis</TableHead>
-                                          <TableHead>Remarks</TableHead>
-                                        </TableRow>
-                                      </TableHeader>
-                                      <TableBody>
-                                        {account.remainingTransactions.map((tx, idx) => {
-                                          const isPartial = tx.originalQuantity && tx.quantity < tx.originalQuantity
-                                          return (
-                                            <TableRow key={`${tx.id}-${idx}`} className={isPartial ? "bg-amber-50/50 dark:bg-amber-950/20" : ""}>
-                                              <TableCell className="font-mono text-xs">
-                                                #{tx.id}
-                                              </TableCell>
-                                              <TableCell>{format(new Date(tx.date), 'dd-MMM-yy')}</TableCell>
-                                              <TableCell className="text-right">
-                                                <span className="font-semibold text-blue-700 dark:text-blue-300">
+                                    <div className="space-y-4">
+                                      <h5 className="text-xs font-medium text-blue-800 dark:text-blue-200">All Transactions for {account.userid}:</h5>
+                                      <Table>
+                                        <TableHeader>
+                                          <TableRow className="text-xs">
+                                            <TableHead className="w-16">ID</TableHead>
+                                            <TableHead>Date</TableHead>
+                                            <TableHead>Action</TableHead>
+                                            <TableHead>Source</TableHead>
+                                            <TableHead className="text-right">Quantity</TableHead>
+                                            <TableHead className="text-right">Price</TableHead>
+                                            <TableHead className="text-right">Trade Value</TableHead>
+                                            <TableHead className="text-right">Brokerage</TableHead>
+                                            <TableHead className="text-right">Net Value</TableHead>
+                                            <TableHead>Order Ref</TableHead>
+                                            <TableHead>Remarks</TableHead>
+                                          </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                          {account.transactions.map((tx) => {
+                                            const netValue = tx.action === 'Buy' 
+                                              ? tx.tradeValue + tx.brokerage 
+                                              : tx.tradeValue - tx.brokerage
+                                            const remainingTx = account.remainingTransactions?.find(rt => rt.id === tx.id)
+                                            const isHolding = tx.action === 'Buy' && remainingTx
+                                            const isPartial = isHolding && remainingTx.originalQuantity && remainingTx.quantity < remainingTx.originalQuantity
+                                            
+                                            return (
+                                              <TableRow 
+                                                key={tx.id} 
+                                                className={cn(
+                                                  "text-xs",
+                                                  isHolding && "bg-blue-50/50 dark:bg-blue-950/20",
+                                                  isPartial && "bg-amber-50/50 dark:bg-amber-950/20"
+                                                )}
+                                              >
+                                                <TableCell className="font-mono">
+                                                  #{tx.id}
+                                                </TableCell>
+                                                <TableCell>{format(new Date(tx.date), 'dd-MMM-yy')}</TableCell>
+                                                <TableCell>
+                                                  <Badge 
+                                                    variant={tx.action === 'Buy' ? 'default' : 'secondary'}
+                                                    className="text-xs"
+                                                  >
+                                                    {tx.action}
+                                                  </Badge>
+                                                </TableCell>
+                                                <TableCell>{tx.source || '-'}</TableCell>
+                                                <TableCell className="text-right">
                                                   {formatQuantity(tx.quantity)}
-                                                </span>
-                                                {tx.originalQuantity && (
-                                                  <>
-                                                    <span className="text-muted-foreground mx-1">/</span>
-                                                    <span className="text-muted-foreground text-sm">
-                                                      {formatQuantity(tx.originalQuantity)}
-                                                    </span>
-                                                  </>
-                                                )}
-                                                {isPartial && (
-                                                  <span className="ml-2 text-xs text-amber-600 dark:text-amber-400">
-                                                    (partial)
-                                                  </span>
-                                                )}
-                                              </TableCell>
-                                              <TableCell className="text-right">
-                                                {formatCurrency(tx.price)}
-                                              </TableCell>
-                                              <TableCell className="text-right">
-                                                {formatCurrency(tx.quantity * tx.price)}
-                                              </TableCell>
-                                              <TableCell className="text-sm text-muted-foreground">
-                                                {tx.remarks || '-'}
-                                              </TableCell>
-                                            </TableRow>
-                                          )
-                                        })}
-                                      </TableBody>
-                                    </Table>
+                                                  {isHolding && remainingTx && (
+                                                    <div className="text-[10px] text-blue-600 dark:text-blue-400">
+                                                      {formatQuantity(remainingTx.quantity)} left
+                                                    </div>
+                                                  )}
+                                                </TableCell>
+                                                <TableCell className="text-right">{formatCurrency(tx.price)}</TableCell>
+                                                <TableCell className="text-right">{formatCurrency(tx.tradeValue)}</TableCell>
+                                                <TableCell className="text-right">{formatCurrency(tx.brokerage)}</TableCell>
+                                                <TableCell className={cn(
+                                                  "text-right font-medium",
+                                                  tx.action === 'Buy' ? "text-red-600" : "text-green-600"
+                                                )}>
+                                                  {tx.action === 'Buy' ? '-' : '+'}{formatCurrency(netValue)}
+                                                </TableCell>
+                                                <TableCell className="text-[10px]">{tx.orderRef || '-'}</TableCell>
+                                                <TableCell className="text-[10px] max-w-[150px] truncate" title={tx.remarks || ''}>
+                                                  {tx.remarks || '-'}
+                                                </TableCell>
+                                              </TableRow>
+                                            )
+                                          })}
+                                        </TableBody>
+                                      </Table>
+                                      
+                                      {/* Separate section for remaining shares summary */}
+                                      {account.remainingTransactions && account.remainingTransactions.length > 0 && (
+                                        <div className="mt-4 p-3 bg-blue-100 dark:bg-blue-950/30 rounded-lg">
+                                          <h5 className="text-xs font-semibold text-blue-800 dark:text-blue-200 mb-2">
+                                            Remaining Shares Distribution (FIFO):
+                                          </h5>
+                                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                                            {account.remainingTransactions.map((tx, idx) => (
+                                              <div key={`${tx.id}-${idx}`} className="text-xs bg-white dark:bg-gray-800 p-2 rounded border border-blue-200 dark:border-blue-800">
+                                                <div className="flex justify-between items-start">
+                                                  <div>
+                                                    <div className="font-mono text-[10px] text-muted-foreground">#{tx.id}</div>
+                                                    <div className="text-[11px]">{format(new Date(tx.date), 'dd-MMM-yy')}</div>
+                                                  </div>
+                                                  <div className="text-right">
+                                                    <div className="font-semibold text-blue-700 dark:text-blue-300">
+                                                      {formatQuantity(tx.quantity)} shares
+                                                    </div>
+                                                    <div className="text-[11px] text-muted-foreground">
+                                                      @ {formatCurrency(tx.price)}
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
                                 </TableCell>
                               </TableRow>
