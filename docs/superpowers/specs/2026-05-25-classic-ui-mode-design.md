@@ -50,13 +50,14 @@ if (uiMode === 'classic') {
 `ClassicShell` renders:
 - Plain white `<body>`-like wrapper, no Tailwind container.
 - Top link bar (`<a>` tags, dark blue, underlined) — matches old JSP top-of-page links:
-  - View Trade Book (`/transactions`)
-  - Stock Summary (no top-level link — accessed by clicking a stock symbol; matches old JSP behavior where summary was only reachable via the Stock Symbol lookup table on FirstPage)
-  - Profit/Loss (`/profit-loss`)
-  - Add Stock Details (`/add-stock`)
-  - Modify Stock Details (`/modify`)
-  - Create New Account (`/accounts`)
-  - Sign Out (calls `signOut()`)
+  - **Left group** (stacked, one per line, mirrors original JSP layout):
+    - View Trade Book (`/transactions`)
+    - Profit/Loss (`/profit-loss`)
+    - Add Stock Details (`/add-stock`)
+    - Modify Stock Details (`/modify`)
+    - Create New Account (`/accounts`)
+  - **Right group** (top-right corner): `Logged in as <username>` text + `[ Log Out ]` link → calls `signOut({ callbackUrl: '/login' })`.
+  - Stock Summary is NOT a top-level link — accessed by clicking a stock symbol in the lookup table, matching old JSP behavior.
 - `<main>` with no padding except a small top margin.
 
 ## Per-page split
