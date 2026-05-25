@@ -25,6 +25,7 @@ import { Badge } from '@/components/ui/badge'
 import { formatCurrency } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { useAccounts } from '@/components/providers/accounts-provider'
+import { useRedirectClassic } from '@/components/classic/use-redirect-classic'
 
 type Transaction = {
   id: number
@@ -87,6 +88,7 @@ type AccountStockSummary = {
 }
 
 export default function HoldingsPage() {
+  useRedirectClassic('/transactions')
   const { accounts, activeAccounts, loading: accountsLoading, selectedAccount, setSelectedAccount, stocks, stocksLoading } = useAccounts()
   const data = stocks as Transaction[]
   const loading = stocksLoading
