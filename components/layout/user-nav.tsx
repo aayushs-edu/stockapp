@@ -1,7 +1,7 @@
 // components/layout/user-nav.tsx
 'use client'
 
-import { signOut } from 'next-auth/react'
+import { signOut, useSession } from 'next-auth/react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -11,9 +11,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { User, LogOut, Settings } from 'lucide-react'
+import { User, LogOut } from 'lucide-react'
 
 export function UserNav() {
+  const { data: session } = useSession()
+  const username = session?.user?.username ?? 'User'
+  const email = session?.user?.email ?? ''
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -26,9 +29,9 @@ export function UserNav() {
       <DropdownMenuContent className="w-48" align="end" forceMount>
         <DropdownMenuLabel className="font-normal p-2">
           <div className="flex flex-col space-y-1">
-            <p className="text-xs font-medium leading-none">Admin</p>
+            <p className="text-xs font-medium leading-none">{username}</p>
             <p className="text-[10px] leading-none text-muted-foreground">
-              admin@stockapp.com
+              {email}
             </p>
           </div>
         </DropdownMenuLabel>

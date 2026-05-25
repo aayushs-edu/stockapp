@@ -5,6 +5,8 @@ import { useSession } from 'next-auth/react'
 import { redirect } from 'next/navigation'
 import { MainNav } from '@/components/layout/main-nav'
 import { UserNav } from '@/components/layout/user-nav'
+import { ClassicShell } from '@/components/classic/primitives'
+import { ClassicNav } from '@/components/classic/classic-nav'
 
 export default function DashboardLayout({
   children,
@@ -19,6 +21,15 @@ export default function DashboardLayout({
 
   if (!session) {
     redirect('/login')
+  }
+
+  if (session.user?.uiMode === 'classic') {
+    return (
+      <ClassicShell>
+        <ClassicNav />
+        <main>{children}</main>
+      </ClassicShell>
+    )
   }
 
   return (
