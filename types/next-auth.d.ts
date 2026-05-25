@@ -1,6 +1,21 @@
 import 'next-auth'
 import 'next-auth/jwt'
 
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      font: React.DetailedHTMLProps<
+        React.HTMLAttributes<HTMLElement> & {
+          size?: number | string
+          color?: string
+          face?: string
+        },
+        HTMLElement
+      >
+    }
+  }
+}
+
 export type UiMode = 'classic' | 'modern'
 
 declare module 'next-auth' {
