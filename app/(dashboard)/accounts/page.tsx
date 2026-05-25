@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
@@ -46,6 +46,7 @@ import {
 import { useToast } from '@/components/ui/use-toast'
 import { formatCurrency } from '@/lib/utils'
 import { cn } from '@/lib/utils'
+import { useAccounts } from '@/components/providers/accounts-provider'
 
 const formSchema = z.object({
   userid: z.string().min(1, 'User ID is required').max(50),
@@ -98,9 +99,13 @@ const PLIDisplay = ({ value, type }: { value: number, type: 'profit' | 'loss' | 
   )
 }
 
+const StatSkeleton = () => (
+  <div className="h-4 w-16 bg-muted animate-pulse rounded mx-auto" />
+)
+
 export default function AccountsPage() {
-  const [accounts, setAccounts] = useState<Account[]>([])
-  const [loading, setLoading] = useState(true)
+  const { allAccounts, stocks, stocksLoading, refreshAccounts } = useAccounts()
+  const loading = stocksLoading && allAccounts.length === 0
   const [dialogOpen, setDialogOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [editingAccount, setEditingAccount] = useState<Account | null>(null)
@@ -108,18 +113,56 @@ export default function AccountsPage() {
   const [toggleLoading, setToggleLoading] = useState<number | null>(null)
   const { toast } = useToast()
 
+  // Compute stats for each account client-side from shared stocks data
+  const accounts: Account[] = useMemo(() => {
+    return allAccounts.map(account => {
+      const userTxns = stocks.filter(s => s.userid === account.userid)
+      if (userTxns.length === 0) {
+        return { ...account, stats: { totalTransactions: 0, buyTransactions: 0, sellTransactions: 0, totalInvestment: 0, totalReturns: 0, realizedPnL: 0, currentInvestment: 0, activeStocks: 0, totalStocks: 0 } }
+      }
+
+      const stockMap = new Map<string, { buyQty: number; sellQty: number; totalBuyValue: number; totalSellValue: number; totalBrokerage: number; avgBuyPrice: number }>()
+      let buyTxns = 0, sellTxns = 0
+
+      userTxns.forEach(t => {
+        let s = stockMap.get(t.stock)
+        if (!s) { s = { buyQty: 0, sellQty: 0, totalBuyValue: 0, totalSellValue: 0, totalBrokerage: 0, avgBuyPrice: 0 }; stockMap.set(t.stock, s) }
+        s.totalBrokerage += t.brokerage
+        if (t.action === 'Buy') { s.buyQty += t.quantity; s.totalBuyValue += t.tradeValue; buyTxns++ }
+        else { s.sellQty += t.quantity; s.totalSellValue += t.tradeValue; sellTxns++ }
+        s.avgBuyPrice = s.buyQty > 0 ? s.totalBuyValue / s.buyQty : 0
+      })
+
+      let totalBuyValue = 0, totalSellValue = 0, totalBrokerage = 0, currentInvestment = 0, realizedPnL = 0, activeStocks = 0
+      stockMap.forEach(s => {
+        totalBuyValue += s.totalBuyValue; totalSellValue += s.totalSellValue; totalBrokerage += s.totalBrokerage
+        const netQty = s.buyQty - s.sellQty
+        if (netQty > 0) { activeStocks++; currentInvestment += netQty * s.avgBuyPrice }
+        if (s.sellQty > 0) realizedPnL += s.totalSellValue - s.avgBuyPrice * s.sellQty
+      })
+
+      const sellBrokerage = userTxns.filter(t => t.action === 'Sell').reduce((sum, t) => sum + t.brokerage, 0)
+      return {
+        ...account,
+        stats: {
+          totalTransactions: userTxns.length,
+          buyTransactions: buyTxns,
+          sellTransactions: sellTxns,
+          totalInvestment: Math.round((totalBuyValue + totalBrokerage) * 100) / 100,
+          totalReturns: Math.round((totalSellValue - sellBrokerage) * 100) / 100,
+          realizedPnL: Math.round(realizedPnL * 100) / 100,
+          currentInvestment: Math.round(currentInvestment * 100) / 100,
+          activeStocks,
+          totalStocks: stockMap.size,
+        }
+      }
+    })
+  }, [allAccounts, stocks])
+
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
-    defaultValues: {
-      userid: '',
-      name: '',
-      active: true,
-    },
+    defaultValues: { userid: '', name: '', active: true },
   })
-
-  useEffect(() => {
-    fetchAccounts()
-  }, [])
 
   useEffect(() => {
     if (editingAccount) {
@@ -130,25 +173,6 @@ export default function AccountsPage() {
       form.reset()
     }
   }, [editingAccount, form])
-
-  const fetchAccounts = async () => {
-    try {
-      const response = await fetch('/api/accounts')
-      if (!response.ok) {
-        throw new Error('Failed to fetch accounts')
-      }
-      const data = await response.json()
-      setAccounts(data)
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: 'Failed to fetch accounts',
-        variant: 'destructive',
-      })
-    } finally {
-      setLoading(false)
-    }
-  }
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     setIsSubmitting(true)
@@ -179,7 +203,7 @@ export default function AccountsPage() {
       setDialogOpen(false)
       setEditingAccount(null)
       form.reset()
-      fetchAccounts()
+      refreshAccounts()
     } catch (error: any) {
       toast({
         title: 'Error',
@@ -207,7 +231,7 @@ export default function AccountsPage() {
         description: 'Account deleted successfully',
       })
       
-      fetchAccounts()
+      refreshAccounts()
     } catch (error: any) {
       toast({
         title: 'Error',
@@ -241,7 +265,7 @@ export default function AccountsPage() {
         description: `Account ${!account.active ? 'activated' : 'deactivated'} successfully`,
       })
       
-      fetchAccounts()
+      refreshAccounts()
     } catch (error: any) {
       toast({
         title: 'Error',
@@ -421,7 +445,7 @@ export default function AccountsPage() {
         </CardHeader>
         <CardContent className="pb-2">
           <div className="text-lg font-bold text-amber-600">
-            {formatCurrency(summaryStats.currentInvestment)}
+            {stocksLoading ? <StatSkeleton /> : formatCurrency(summaryStats.currentInvestment)}
           </div>
           <p className="text-[10px] text-muted-foreground">
             Active positions
@@ -440,10 +464,7 @@ export default function AccountsPage() {
         </CardHeader>
         <CardContent className="pb-2">
           <div className="text-lg font-bold">
-            <PLIDisplay 
-              value={summaryStats.realizedPnL} 
-              type={summaryStats.realizedPnL >= 0 ? 'profit' : 'loss'} 
-            />
+            {stocksLoading ? <StatSkeleton /> : <PLIDisplay value={summaryStats.realizedPnL} type={summaryStats.realizedPnL >= 0 ? 'profit' : 'loss'} />}
           </div>
           <p className="text-[10px] text-muted-foreground">
             From closed positions
@@ -457,7 +478,7 @@ export default function AccountsPage() {
           <BarChart3 className="h-3 w-3 text-muted-foreground" />
         </CardHeader>
         <CardContent className="pb-2">
-          <div className="text-lg font-bold">{summaryStats.totalTransactions}</div>
+          <div className="text-lg font-bold">{stocksLoading ? <StatSkeleton /> : summaryStats.totalTransactions}</div>
           <p className="text-[10px] text-muted-foreground">
             All time trades
           </p>
@@ -578,33 +599,37 @@ export default function AccountsPage() {
                         </Button>
                       </TableCell>
                       <TableCell className="text-center py-1">
-                        <div className="flex flex-col items-center gap-1">
-                          <span className="font-medium">{account.stats?.totalTransactions || 0}</span>
-                          {account.stats && account.stats.totalTransactions > 0 && (
-                            <div className="flex gap-1 text-xs text-muted-foreground">
-                              <span className="text-green-600">{account.stats.buyTransactions} buy</span>
-                              <span>•</span>
-                              <span className="text-red-600">{account.stats.sellTransactions} sell</span>
-                            </div>
-                          )}
-                        </div>
+                        {stocksLoading ? <StatSkeleton /> : (
+                          <div className="flex flex-col items-center gap-1">
+                            <span className="font-medium">{account.stats?.totalTransactions || 0}</span>
+                            {account.stats && account.stats.totalTransactions > 0 && (
+                              <div className="flex gap-1 text-xs text-muted-foreground">
+                                <span className="text-green-600">{account.stats.buyTransactions} buy</span>
+                                <span>•</span>
+                                <span className="text-red-600">{account.stats.sellTransactions} sell</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell className="text-center py-1">
-                        <div className="flex flex-col items-center gap-1">
-                          <span className="font-medium">{account.stats?.activeStocks || 0}</span>
-                          <span className="text-xs text-muted-foreground">
-                            of {account.stats?.totalStocks || 0} total
-                          </span>
-                        </div>
+                        {stocksLoading ? <StatSkeleton /> : (
+                          <div className="flex flex-col items-center gap-1">
+                            <span className="font-medium">{account.stats?.activeStocks || 0}</span>
+                            <span className="text-xs text-muted-foreground">
+                              of {account.stats?.totalStocks || 0} total
+                            </span>
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell className="text-right font-medium py-1">
-                        {formatCurrency(account.stats?.totalInvestment || 0)}
+                        {stocksLoading ? <StatSkeleton /> : formatCurrency(account.stats?.totalInvestment || 0)}
                       </TableCell>
                       <TableCell className="text-right py-1">
-                        {formatCurrency(account.stats?.totalReturns || 0)}
+                        {stocksLoading ? <StatSkeleton /> : formatCurrency(account.stats?.totalReturns || 0)}
                       </TableCell>
                       <TableCell className="text-right font-medium py-1">
-                        {pliDisplay}
+                        {stocksLoading ? <StatSkeleton /> : pliDisplay}
                       </TableCell>
                       <TableCell className="text-center py-1">
                         <div className="flex items-center gap-1 justify-center">

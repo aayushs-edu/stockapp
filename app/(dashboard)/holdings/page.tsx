@@ -87,44 +87,13 @@ type AccountStockSummary = {
 }
 
 export default function HoldingsPage() {
-  const { accounts, activeAccounts, loading: accountsLoading } = useAccounts()
-  const [data, setData] = useState<Transaction[]>([])
-  const [loading, setLoading] = useState(false)
-  const [accountFilter, setAccountFilter] = useState<string>('')
+  const { accounts, activeAccounts, loading: accountsLoading, selectedAccount, setSelectedAccount, stocks, stocksLoading } = useAccounts()
+  const data = stocks as Transaction[]
+  const loading = stocksLoading
+  const accountFilter = selectedAccount
+  const setAccountFilter = setSelectedAccount
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set())
   const [hasInitialized, setHasInitialized] = useState(false)
-
-  // Remove auto-selection of active-accounts
-  useEffect(() => {
-    if (accountFilter) {
-      fetchData()
-    }
-  }, [accountFilter])
-
-  const fetchData = async () => {
-    setLoading(true)
-    try {
-      const response = await fetch(`/api/stocks?mode=all`)
-      
-      if (!response.ok) {
-        console.error('Failed to fetch stocks:', response.status)
-        setData([])
-        return
-      }
-      
-      const result = await response.json()
-      if (Array.isArray(result)) {
-        setData(result)
-      } else {
-        setData([])
-      }
-    } catch (error) {
-      console.error('Failed to fetch transactions:', error)
-      setData([])
-    } finally {
-      setLoading(false)
-    }
-  }
 
   // FIFO calculation for remaining shares with rounding error mitigation
   const calculateRemainingTransactions = (buyTransactions: Transaction[], totalSoldQty: number): Transaction[] => {

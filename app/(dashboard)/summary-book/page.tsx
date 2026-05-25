@@ -110,10 +110,11 @@ export default function SummaryBookPage() {
   const searchParams = useSearchParams()
   const stockFromUrl = searchParams.get('stock')
   
-  const { accounts, activeAccounts, loading: accountsLoading } = useAccounts()
-  const [data, setData] = useState<Transaction[]>([])
-  const [loading, setLoading] = useState(false)
-  const [accountFilter, setAccountFilter] = useState<string>('')
+  const { accounts, activeAccounts, loading: accountsLoading, selectedAccount, setSelectedAccount, stocks, stocksLoading } = useAccounts()
+  const data = stocks as Transaction[]
+  const loading = stocksLoading
+  const accountFilter = selectedAccount
+  const setAccountFilter = setSelectedAccount
   const [stockFilter, setStockFilter] = useState<string>(stockFromUrl || '')
   const [holdingFilter, setHoldingFilter] = useState<string>('all')
   const [stockSearchOpen, setStockSearchOpen] = useState(false)
@@ -129,18 +130,12 @@ export default function SummaryBookPage() {
     return Array.from(stocks).sort()
   }, [data])
 
-  // Immediate auto-selection when stock comes from URL - FIXED
+  // Immediate auto-selection when stock comes from URL
   useEffect(() => {
     if (stockFromUrl && !accountFilter) {
       setAccountFilter('all-accounts')
     }
   }, [stockFromUrl, accountFilter])
-
-  useEffect(() => {
-    if (accountFilter) {
-      fetchData()
-    }
-  }, [accountFilter])
 
   // Auto-expand if stock filter is set from URL
   useEffect(() => {
@@ -148,31 +143,6 @@ export default function SummaryBookPage() {
       setExpandedStocks(new Set([stockFromUrl]))
     }
   }, [stockFromUrl, data])
-
-  const fetchData = async () => {
-    setLoading(true)
-    try {
-      const response = await fetch(`/api/stocks?mode=all`)
-      
-      if (!response.ok) {
-        console.error('Failed to fetch stocks:', response.status)
-        setData([])
-        return
-      }
-      
-      const result = await response.json()
-      if (Array.isArray(result)) {
-        setData(result)
-      } else {
-        setData([])
-      }
-    } catch (error) {
-      console.error('Failed to fetch transactions:', error)
-      setData([])
-    } finally {
-      setLoading(false)
-    }
-  }
 
   // FIFO calculation for remaining shares
   const calculateRemainingTransactions = (buyTransactions: Transaction[], totalSoldQty: number): Transaction[] => {

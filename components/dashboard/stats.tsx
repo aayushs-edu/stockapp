@@ -1,120 +1,76 @@
 // components/dashboard/stats.tsx
+'use client'
+
+import { useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { prisma } from '@/lib/db'
 import { cn, formatCurrency } from '@/lib/utils'
-import { TrendingUp, TrendingDown, DollarSign, Activity, ArrowUpRight, ArrowDownRight, Wallet } from 'lucide-react'
+import { TrendingUp, TrendingDown, DollarSign, Activity, Wallet } from 'lucide-react'
+import { useAccounts } from '@/components/providers/accounts-provider'
 
-export async function DashboardStats() {
-  const [totalBuy, totalSell, totalAccounts, recentTransactions, stockPositions] = await Promise.all([
-    prisma.stock.aggregate({
-      where: { action: 'Buy' },
-      _sum: { tradeValue: true, brokerage: true }
-    }),
-    prisma.stock.aggregate({
-      where: { action: 'Sell' },
-      _sum: { tradeValue: true, brokerage: true }
-    }),
-    prisma.account.count(),
-    prisma.stock.count({
-      where: {
-        date: {
-          gte: new Date(new Date().setDate(new Date().getDate() - 30))
-        }
-      }
-    }),
-    // Get position status for each stock
-    prisma.stock.groupBy({
-      by: ['stock'],
-      _sum: {
-        quantity: true,
-        tradeValue: true,
-        brokerage: true
-      },
-      where: { action: 'Buy' }
+export function DashboardStats() {
+  const { stocks, allAccounts } = useAccounts()
+
+  const computed = useMemo(() => {
+    const buyTxns = stocks.filter(s => s.action === 'Buy')
+    const sellTxns = stocks.filter(s => s.action === 'Sell')
+
+    const buyTotal = buyTxns.reduce((sum, s) => sum + s.tradeValue + s.brokerage, 0)
+    const sellTotal = sellTxns.reduce((sum, s) => sum + s.tradeValue - s.brokerage, 0)
+
+    const thirtyDaysAgo = new Date()
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+    const recentTransactions = stocks.filter(s => new Date(s.date) >= thirtyDaysAgo).length
+
+    // Group by stock to calculate positions
+    const stockMap = new Map<string, { buyQty: number; sellQty: number; totalBuyValue: number; totalSellValue: number }>()
+    stocks.forEach(s => {
+      let entry = stockMap.get(s.stock)
+      if (!entry) { entry = { buyQty: 0, sellQty: 0, totalBuyValue: 0, totalSellValue: 0 }; stockMap.set(s.stock, entry) }
+      if (s.action === 'Buy') { entry.buyQty += s.quantity; entry.totalBuyValue += s.tradeValue }
+      else { entry.sellQty += s.quantity; entry.totalSellValue += s.tradeValue }
     })
-  ])
 
-  // Get sell data for position calculation
-  const sellData = await prisma.stock.groupBy({
-    by: ['stock'],
-    _sum: {
-      quantity: true,
-      tradeValue: true,
-      brokerage: true
-    },
-    where: { action: 'Sell' }
-  })
+    let realizedPnL = 0
+    let currentInvestment = 0
+    stockMap.forEach(pos => {
+      const avgBuyPrice = pos.buyQty > 0 ? pos.totalBuyValue / pos.buyQty : 0
+      const remaining = pos.buyQty - pos.sellQty
+      if (remaining > 0) currentInvestment += remaining * avgBuyPrice
+      if (pos.sellQty > 0) realizedPnL += pos.totalSellValue - avgBuyPrice * pos.sellQty
+    })
 
-  const sellMap = new Map(sellData.map(s => [s.stock, s._sum]))
-  
-  // Calculate realized P&L and current investment
-  let realizedPnL = 0
-  let currentInvestment = 0
-  let totalStocks = 0
-  
-  stockPositions.forEach(buyPosition => {
-    const soldPosition = sellMap.get(buyPosition.stock)
-    const buyQty = buyPosition._sum.quantity || 0
-    const sellQty = soldPosition?.quantity || 0
-    const remainingQty = buyQty - sellQty
-    
-    if (remainingQty <= 0) {
-      // Position is closed - calculate realized P&L
-      const buyValue = (buyPosition._sum.tradeValue || 0) + (buyPosition._sum.brokerage || 0)
-      const sellValue = (soldPosition?.tradeValue || 0) - (soldPosition?.brokerage || 0)
-      const avgBuyPrice = buyQty > 0 ? (buyPosition._sum.tradeValue || 0) / buyQty : 0
-      realizedPnL += sellValue - (avgBuyPrice * sellQty)
-    } else {
-      // Position is active - count as investment
-      const avgPrice = buyQty > 0 ? (buyPosition._sum.tradeValue || 0) / buyQty : 0
-      currentInvestment += remainingQty * avgPrice
-    }
-    totalStocks++
-  })
-
-  const buyTotal = (totalBuy._sum.tradeValue || 0) + (totalBuy._sum.brokerage || 0)
-  const sellTotal = (totalSell._sum.tradeValue || 0) - (totalSell._sum.brokerage || 0)
-  const netCashFlow = sellTotal - buyTotal
+    return { buyTotal, recentTransactions, realizedPnL, currentInvestment, totalStocks: stockMap.size }
+  }, [stocks])
 
   const stats = [
     {
       title: 'Current Investment',
-      value: formatCurrency(currentInvestment),
+      value: formatCurrency(computed.currentInvestment),
       icon: Wallet,
-      description: 'Active positions value',
-      trend: 'investment',
-      gradient: 'from-amber-600 to-yellow-600',
-      bgGradient: 'from-amber-50 to-yellow-100 dark:from-amber-950/20 dark:to-yellow-900/20'
+      description: 'Active positions',
+      valueClass: 'text-amber-600 dark:text-amber-400',
     },
     {
       title: 'Total Deployed',
-      value: formatCurrency(buyTotal),
+      value: formatCurrency(computed.buyTotal),
       icon: DollarSign,
       description: 'Total capital invested',
-      trend: 'neutral',
-      gradient: 'from-blue-500 to-blue-600',
-      bgGradient: 'from-blue-50 to-blue-100 dark:from-blue-950/20 dark:to-blue-900/20'
+      valueClass: '',
     },
     {
       title: 'Realized P/L',
-      value: formatCurrency(Math.abs(realizedPnL)),
-      icon: realizedPnL >= 0 ? TrendingUp : TrendingDown,
-      description: `${realizedPnL >= 0 ? 'Profit' : 'Loss'} from closed positions`,
-      trend: realizedPnL >= 0 ? 'profit' : 'loss',
-      gradient: realizedPnL >= 0 ? 'from-emerald-500 to-emerald-600' : 'from-red-500 to-red-600',
-      bgGradient: realizedPnL >= 0 
-        ? 'from-emerald-50 to-emerald-100 dark:from-emerald-950/20 dark:to-emerald-900/20' 
-        : 'from-red-50 to-red-100 dark:from-red-950/20 dark:to-red-900/20'
+      value: (computed.realizedPnL >= 0 ? '+' : '-') + formatCurrency(Math.abs(computed.realizedPnL)),
+      icon: computed.realizedPnL >= 0 ? TrendingUp : TrendingDown,
+      description: computed.realizedPnL >= 0 ? 'Profit from closed positions' : 'Loss from closed positions',
+      valueClass: computed.realizedPnL >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400',
     },
     {
       title: 'Trading Activity',
-      value: recentTransactions.toString(),
+      value: computed.recentTransactions.toString(),
       icon: Activity,
-      description: `${totalStocks} unique stocks`,
-      trend: 'neutral',
-      gradient: 'from-purple-500 to-purple-600',
-      bgGradient: 'from-purple-50 to-purple-100 dark:from-purple-950/20 dark:to-purple-900/20'
-    }
+      description: `${computed.totalStocks} unique stocks traded`,
+      valueClass: '',
+    },
   ]
 
   return (
@@ -122,51 +78,18 @@ export async function DashboardStats() {
       {stats.map((stat, index) => {
         const Icon = stat.icon
         return (
-          <Card 
-            key={index} 
-            className={cn(
-              "relative overflow-hidden transition-all hover:shadow-md",
-              "bg-gradient-to-br",
-              stat.bgGradient
-            )}
-          >
-            <div className="absolute top-0 right-0 w-24 h-24 transform translate-x-6 -translate-y-6">
-              <div className={cn(
-                "w-full h-full rounded-full opacity-10 bg-gradient-to-br blur-xl",
-                stat.gradient
-              )} />
-            </div>
+          <Card key={index}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
-              <CardTitle className="text-xs font-medium">
+              <CardTitle className="text-xs font-medium text-muted-foreground">
                 {stat.title}
               </CardTitle>
-              <div className={cn(
-                "p-1.5 rounded-lg bg-gradient-to-br",
-                stat.gradient
-              )}>
-                <Icon className="h-3 w-3 text-white" />
-              </div>
+              <Icon className="h-3.5 w-3.5 text-muted-foreground" />
             </CardHeader>
             <CardContent className="pb-3">
-              <div className={cn(
-                "text-lg font-bold",
-                stat.trend === 'profit' && "text-emerald-600 dark:text-emerald-400",
-                stat.trend === 'loss' && "text-red-600 dark:text-red-400",
-                stat.trend === 'investment' && "text-amber-600 dark:text-amber-400"
-              )}>
+              <div className={cn("text-xl font-semibold tabular-nums", stat.valueClass)}>
                 {stat.value}
               </div>
-              <p className={cn(
-                "text-[10px] mt-0.5 flex items-center gap-1 leading-tight",
-                stat.trend === 'profit' && "text-emerald-600 dark:text-emerald-400",
-                stat.trend === 'loss' && "text-red-600 dark:text-red-400",
-                stat.trend === 'investment' && "text-amber-600 dark:text-amber-400",
-                stat.trend === 'neutral' && "text-muted-foreground"
-              )}>
-                {stat.trend === 'profit' && <ArrowUpRight className="h-2 w-2" />}
-                {stat.trend === 'loss' && <ArrowDownRight className="h-2 w-2" />}
-                {stat.description}
-              </p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">{stat.description}</p>
             </CardContent>
           </Card>
         )

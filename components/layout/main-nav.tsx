@@ -3,181 +3,143 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { cn } from '@/lib/utils'
-import {
-  BarChart3,
-  FileText,
-  Home,
-  PlusCircle,
-  Users,
-  Edit,
-  PieChart,
-  TrendingUp,
-  Menu,
-  X
-} from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { BarChart3, MoreHorizontal, Menu, X } from 'lucide-react'
 
-const routes = [
-  {
-    href: '/',
-    label: 'Dashboard',
-    icon: Home,
-    description: 'Overview & analytics'
-  },
-  {
-    href: '/transactions',
-    label: 'Trades',
-    icon: FileText,
-    description: 'View all trades'
-  },
-  {
-    href: '/summary-book',
-    label: 'Summary',
-    icon: FileText,
-    description: 'Consolidated view'
-  },
-  {
-    href: '/holdings',
-    label: 'Holdings',
-    icon: BarChart3,
-    description: 'Current holdings'
-  },
-  {
-    href: '/add-stock',
-    label: 'Add',
-    icon: PlusCircle,
-    description: 'New transaction'
-  },
-  {
-    href: '/modify',
-    label: 'Edit',
-    icon: Edit,
-    description: 'Edit records'
-  },
-  {
-    href: '/accounts',
-    label: 'Accounts',
-    icon: Users,
-    description: 'Manage accounts'
-  },
-  {
-    href: '/profit-loss',
-    label: 'P&L',
-    icon: TrendingUp,
-    description: 'Profit & loss'
-  },
-  {
-    href: '/summary',
-    label: 'Portfolio',
-    icon: PieChart,
-    description: 'Portfolio overview'
-  }
+const primaryRoutes = [
+  { href: '/',              label: 'Dashboard' },
+  { href: '/transactions',  label: 'Trades'     },
+  { href: '/summary-book',  label: 'Summary'    },
+  { href: '/add-stock',     label: 'Add'        },
+  { href: '/modify',        label: 'Edit'       },
+  { href: '/accounts',      label: 'Accounts'   },
 ]
+
+const moreRoutes = [
+  { href: '/holdings',    label: 'Holdings'  },
+  { href: '/profit-loss', label: 'P&L'       },
+  { href: '/summary',     label: 'Portfolio' },
+]
+
+const allRoutes = [...primaryRoutes, ...moreRoutes]
 
 export function MainNav() {
   const pathname = usePathname()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
+  const moreRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) {
+        setMoreOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const isMoreActive = moreRoutes.some(r => pathname === r.href)
 
   return (
     <nav className="flex items-center justify-between w-full">
-      {/* Logo - More Compact */}
-      <Link href="/" className="flex items-center space-x-2 group">
-        <div className="p-1.5 rounded-md bg-primary/10 group-hover:bg-primary/20 transition-colors">
-          <BarChart3 className="h-5 w-5 text-primary" />
-        </div>
-        <span className="font-bold text-lg bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
-          StockApp
-        </span>
+      {/* Logo */}
+      <Link href="/" className="flex items-center gap-2 shrink-0">
+        <BarChart3 className="h-4 w-4 text-primary" />
+        <span className="font-semibold text-sm">StockApp</span>
       </Link>
-      
-      {/* Desktop Navigation - Compact Pills */}
-      <div className="hidden lg:flex items-center space-x-1 bg-muted/30 rounded-full p-1">
-        {routes.map((route) => {
-          const Icon = route.icon
+
+      {/* Desktop Navigation */}
+      <div className="hidden lg:flex items-center gap-1">
+        {primaryRoutes.map((route) => {
           const isActive = pathname === route.href
-          
           return (
             <Link
               key={route.href}
               href={route.href}
-              className="group relative"
+              className={cn(
+                'px-3 py-1.5 rounded-md text-sm transition-colors',
+                isActive
+                  ? 'bg-muted text-foreground font-medium'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+              )}
             >
-              <div
-                className={cn(
-                  'flex items-center space-x-1.5 px-3 py-1.5 rounded-full transition-all duration-200 text-xs font-medium',
-                  'hover:bg-background hover:shadow-sm',
-                  isActive
-                    ? 'bg-background text-primary shadow-sm border border-border/50'
-                    : 'text-muted-foreground hover:text-foreground'
-                )}
-              >
-                <Icon className={cn(
-                  "h-3.5 w-3.5 transition-transform group-hover:scale-110",
-                  isActive && "text-primary"
-                )} />
-                <span className="hidden xl:inline">{route.label}</span>
-              </div>
-              
-              {/* Compact Tooltip */}
-              <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-2 px-2 py-1 bg-popover text-popover-foreground text-xs rounded-md shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-50 xl:hidden">
-                {route.label}
-                <div className="absolute -top-1 left-1/2 transform -translate-x-1/2 w-2 h-2 bg-popover rotate-45" />
-              </div>
+              {route.label}
             </Link>
           )
         })}
-      </div>
-      
-      {/* Mobile Menu Button */}
-      <div className="lg:hidden">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="p-2"
-        >
-          {mobileMenuOpen ? (
-            <X className="h-4 w-4" />
-          ) : (
-            <Menu className="h-4 w-4" />
+
+        {/* More dropdown */}
+        <div className="relative" ref={moreRef}>
+          <button
+            onClick={() => setMoreOpen(v => !v)}
+            className={cn(
+              'flex items-center gap-1 px-3 py-1.5 rounded-md text-sm transition-colors',
+              isMoreActive
+                ? 'bg-muted text-foreground font-medium'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+            )}
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </button>
+
+          {moreOpen && (
+            <div className="absolute right-0 top-full mt-1 w-36 bg-popover border rounded-md shadow-md z-50 py-1">
+              {moreRoutes.map((route) => (
+                <Link
+                  key={route.href}
+                  href={route.href}
+                  onClick={() => setMoreOpen(false)}
+                  className={cn(
+                    'block px-3 py-1.5 text-sm transition-colors',
+                    pathname === route.href
+                      ? 'bg-muted text-foreground font-medium'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                  )}
+                >
+                  {route.label}
+                </Link>
+              ))}
+            </div>
           )}
-        </Button>
+        </div>
       </div>
 
-      {/* Mobile Menu Overlay */}
+      {/* Mobile Menu Button */}
+      <div className="lg:hidden">
+        <button
+          onClick={() => setMobileMenuOpen(v => !v)}
+          className="p-2 text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {mobileMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+        </button>
+      </div>
+
+      {/* Mobile Menu */}
       {mobileMenuOpen && (
         <>
-          {/* Backdrop */}
-          <div 
+          <div
             className="lg:hidden fixed inset-0 z-40 bg-black/20"
             onClick={() => setMobileMenuOpen(false)}
           />
-          {/* Menu */}
-          <div className="lg:hidden absolute top-full left-0 right-0 z-50 bg-background border-b shadow-lg">
+          <div className="lg:hidden absolute top-full left-0 right-0 z-50 bg-background border-b shadow-md">
             <div className="grid grid-cols-2 gap-1 p-3">
-              {routes.map((route) => {
-                const Icon = route.icon
-                const isActive = pathname === route.href
-                
-                return (
-                  <Link
-                    key={route.href}
-                    href={route.href}
-                    onClick={() => setMobileMenuOpen(false)}
-                    className={cn(
-                      'flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors text-sm',
-                      isActive
-                        ? 'bg-primary/10 text-primary font-medium'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                    )}
-                  >
-                    <Icon className="h-4 w-4" />
-                    <span>{route.label}</span>
-                  </Link>
-                )
-              })}
+              {allRoutes.map((route) => (
+                <Link
+                  key={route.href}
+                  href={route.href}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={cn(
+                    'px-3 py-2 rounded-lg text-sm transition-colors',
+                    pathname === route.href
+                      ? 'bg-muted text-foreground font-medium'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                  )}
+                >
+                  {route.label}
+                </Link>
+              ))}
             </div>
           </div>
         </>

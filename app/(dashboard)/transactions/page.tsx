@@ -1,7 +1,7 @@
 // app/(dashboard)/transactions/page.tsx
 'use client'
 
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useMemo } from 'react'
 import { format } from 'date-fns'
 import {
   ColumnDef,
@@ -103,39 +103,27 @@ const accountFilter: FilterFn<Transaction> = (row, columnId, filterValue) => {
 }
 
 export default function TransactionsPage() {
-  const { activeAccounts, loading: accountsLoading } = useAccounts()
-  const [data, setData] = useState<Transaction[]>([])
-  const [loading, setLoading] = useState(false)
-  const [loadingMore, setLoadingMore] = useState(false)
+  const { activeAccounts, loading: accountsLoading, selectedAccount, setSelectedAccount, stocks, stocksLoading, refreshStocks } = useAccounts()
+  const loading = stocksLoading
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
-  
-  // Add state for edit dialog
+
+  // Edit dialog state
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
-  
-  // Add state for manual filters
-  const [accountFilter, setAccountFilter] = useState<string>('')
+
+  // Filters
+  const accountFilter = selectedAccount
+  const setAccountFilter = setSelectedAccount
   const [actionFilter, setActionFilter] = useState<string>('all')
   const [stockFilter, setStockFilter] = useState<string>('')
   const [stockSearchOpen, setStockSearchOpen] = useState(false)
   const [stockSearchValue, setStockSearchValue] = useState('')
   const [dateFrom, setDateFrom] = useState<Date>()
   const [dateTo, setDateTo] = useState<Date>()
-  
-  // Pagination state
-  const [currentPage, setCurrentPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(0)
-  const [totalCount, setTotalCount] = useState(0)
-  const [hasMore, setHasMore] = useState(false)
-  const pageSize = 100
-  
-  // AbortController for canceling requests
-  const abortControllerRef = useRef<AbortController | null>(null)
 
-  // All available stocks (loaded separately)
-  const [allStocks, setAllStocks] = useState<string[]>([])
-  const [loadingStocks, setLoadingStocks] = useState(false)
+// All available stocks derived from shared data
+  const allStocks = useMemo(() => Array.from(new Set(stocks.map(t => t.stock))).sort(), [stocks])
 
   const handleEditTransaction = (transaction: Transaction) => {
     setEditingTransaction(transaction)
@@ -272,128 +260,26 @@ export default function TransactionsPage() {
     },
   ]
 
-  // Use data directly since filtering is done server-side
-  const filteredData = data
-
-  // Reset pagination when filters change
-  useEffect(() => {
-    setCurrentPage(1)
-    setData([])
-    if (accountFilter) {
-      fetchData(1, true)
+  // Client-side filtering of shared stocks data
+  const filteredData = useMemo(() => {
+    let result = stocks as Transaction[]
+    if (accountFilter && accountFilter !== 'all-accounts') {
+      result = result.filter(t => t.userid === accountFilter)
     }
-  }, [accountFilter, actionFilter, stockFilter, dateFrom, dateTo])
-  
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort()
-      }
+    if (actionFilter && actionFilter !== 'all') {
+      result = result.filter(t => t.action === actionFilter)
     }
-  }, [])
-  
-  // Fetch all unique stocks on mount
-  useEffect(() => {
-    fetchAllStocks()
-  }, [])
-  
-  const fetchAllStocks = async () => {
-    setLoadingStocks(true)
-    try {
-      // Fetch with mode=all to get all stocks, but with a special flag to only return unique stocks
-      const response = await fetch('/api/stocks/unique')
-      if (response.ok) {
-        const stocks = await response.json()
-        setAllStocks(stocks.sort())
-      }
-    } catch (error) {
-      console.error('Failed to fetch stock list:', error)
-      // Fallback to empty array
-      setAllStocks([])
-    } finally {
-      setLoadingStocks(false)
+    if (stockFilter) {
+      result = result.filter(t => t.stock === stockFilter)
     }
-  }
-
-  const fetchData = async (page: number = 1, reset: boolean = false) => {
-    // Cancel any existing request
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
+    if (dateFrom) {
+      result = result.filter(t => new Date(t.date) >= dateFrom)
     }
-    
-    // Create new AbortController for this request
-    const abortController = new AbortController()
-    abortControllerRef.current = abortController
-    
-    if (reset) {
-      setLoading(true)
-    } else {
-      setLoadingMore(true)
+    if (dateTo) {
+      result = result.filter(t => new Date(t.date) <= dateTo)
     }
-    
-    try {
-      const params = new URLSearchParams({
-        page: page.toString(),
-        limit: pageSize.toString(),
-      })
-      
-      // Add filters
-      if (accountFilter && accountFilter !== 'all') params.append('userid', accountFilter)
-      if (actionFilter && actionFilter !== 'all') params.append('action', actionFilter)
-      if (stockFilter) params.append('stock', stockFilter)
-      if (dateFrom) params.append('dateFrom', dateFrom.toISOString())
-      if (dateTo) params.append('dateTo', dateTo.toISOString())
-      
-      const response = await fetch(`/api/stocks?${params}`, {
-        signal: abortController.signal
-      })
-      
-      if (!response.ok) {
-        console.error('Failed to fetch stocks:', response.status)
-        if (reset) setData([])
-        return
-      }
-      
-      const result = await response.json()
-      
-      if (result.data && Array.isArray(result.data)) {
-        if (reset) {
-          setData(result.data)
-        } else {
-          setData(prev => [...prev, ...result.data])
-        }
-        
-        // Update pagination info
-        setCurrentPage(result.pagination.page)
-        setTotalPages(result.pagination.totalPages)
-        setTotalCount(result.pagination.totalCount)
-        setHasMore(result.pagination.hasMore)
-      } else {
-        console.error('Unexpected response format:', result)
-        if (reset) setData([])
-      }
-    } catch (error: any) {
-      if (error.name === 'AbortError') {
-        console.log('Request was cancelled')
-      } else {
-        console.error('Failed to fetch transactions:', error)
-        if (reset) setData([])
-      }
-    } finally {
-      // Only update loading states if this request wasn't aborted
-      if (abortController.signal && !abortController.signal.aborted) {
-        setLoading(false)
-        setLoadingMore(false)
-      }
-    }
-  }
-
-  const loadMoreData = () => {
-    if (hasMore && !loadingMore) {
-      fetchData(currentPage + 1, false)
-    }
-  }
+    return result
+  }, [stocks, accountFilter, actionFilter, stockFilter, dateFrom, dateTo])
 
   const table = useReactTable({
     data: filteredData,
@@ -557,7 +443,7 @@ export default function TransactionsPage() {
             {accountFilter && (
               <span className="text-muted-foreground"> for </span>
             )}
-            {accountFilter === 'all' ? (
+            {accountFilter === 'all-accounts' ? (
               <span className="text-primary">all accounts</span>
             ) : accountFilter ? (
               <span className="text-primary">{accountFilter}</span>
@@ -565,7 +451,7 @@ export default function TransactionsPage() {
           </h1>
           {accountFilter && (
             <p className="text-sm text-muted-foreground mt-1">
-              {accountFilter === 'all' 
+              {accountFilter === 'all-accounts'
                 ? `Showing transactions from ${activeAccounts.length} accounts`
                 : `Showing transactions for ${activeAccounts.find(acc => acc.userid === accountFilter)?.name || accountFilter}`
               }
@@ -605,7 +491,7 @@ export default function TransactionsPage() {
                         {account.userid} - {account.name}
                       </SelectItem>
                     ))}
-                    <SelectItem value="all">All Active Accounts</SelectItem>
+                    <SelectItem value="all-accounts">All Active Accounts</SelectItem>
                   </>
                 )}
               </SelectContent>
@@ -630,9 +516,9 @@ export default function TransactionsPage() {
                   role="combobox"
                   aria-expanded={stockSearchOpen}
                   className="justify-between"
-                  disabled={loadingStocks}
+                  disabled={stocksLoading}
                 >
-                  {loadingStocks ? (
+                  {stocksLoading ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Loading stocks...
@@ -662,7 +548,7 @@ export default function TransactionsPage() {
                     >
                       All Stocks
                     </Button>
-                    {allStocks.length === 0 && !loadingStocks ? (
+                    {allStocks.length === 0 && !stocksLoading ? (
                       <div className="px-2 py-6 text-center text-sm text-muted-foreground">
                         No stocks available.
                       </div>
@@ -804,76 +690,8 @@ export default function TransactionsPage() {
       {accountFilter && (
         <>
           <div className="space-y-4">
-            {/* Show total count and load more button */}
-            <div className="flex items-center justify-between">
-              <div className="flex-1 text-sm text-muted-foreground">
-                Showing {data.length} of {totalCount} total transactions
-                {hasMore && ` (Page ${currentPage} of ${totalPages})`}
-              </div>
-              <div className="flex items-center gap-2">
-                {hasMore && (
-                  <>
-                    <Button
-                      onClick={loadMoreData}
-                      disabled={loadingMore}
-                      variant="outline"
-                      size="sm"
-                    >
-                      {loadingMore ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Loading...
-                        </>
-                      ) : (
-                        `Load Next ${pageSize}`
-                      )}
-                    </Button>
-                    <Button
-                      onClick={async () => {
-                        // Cancel any existing request
-                        if (abortControllerRef.current) {
-                          abortControllerRef.current.abort()
-                        }
-                        
-                        const abortController = new AbortController()
-                        abortControllerRef.current = abortController
-                        
-                        setLoading(true)
-                        try {
-                          const params = new URLSearchParams({ mode: 'all' })
-                          if (accountFilter && accountFilter !== 'all') params.append('userid', accountFilter)
-                          if (actionFilter && actionFilter !== 'all') params.append('action', actionFilter)
-                          if (stockFilter) params.append('stock', stockFilter)
-                          if (dateFrom) params.append('dateFrom', dateFrom.toISOString())
-                          if (dateTo) params.append('dateTo', dateTo.toISOString())
-                          
-                          const response = await fetch(`/api/stocks?${params}`, {
-                            signal: abortController.signal
-                          })
-                          if (response.ok) {
-                            const result = await response.json()
-                            setData(result)
-                            setHasMore(false)
-                          }
-                        } catch (error: any) {
-                          if (error.name !== 'AbortError') {
-                            console.error('Failed to load all data:', error)
-                          }
-                        } finally {
-                          if (!abortController.signal.aborted) {
-                            setLoading(false)
-                          }
-                        }
-                      }}
-                      disabled={loading || loadingMore}
-                      variant="secondary"
-                      size="sm"
-                    >
-                      Load All ({totalCount - data.length} remaining)
-                    </Button>
-                  </>
-                )}
-              </div>
+            <div className="flex-1 text-sm text-muted-foreground">
+              Showing {filteredData.length} transactions
             </div>
 
             {/* Table pagination controls */}
@@ -1050,7 +868,7 @@ export default function TransactionsPage() {
         open={editDialogOpen}
         onOpenChange={setEditDialogOpen}
         onSuccess={() => {
-          fetchData() // Refresh the data after successful edit
+          refreshStocks()
         }}
       />
     </div>

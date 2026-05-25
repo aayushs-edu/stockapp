@@ -114,10 +114,11 @@ const calculateHoldingPeriod = (buyDate: string, sellDate: string): number => {
 }
 
 export default function ProfitLossPage() {
-  const { accounts, activeAccounts, loading: accountsLoading } = useAccounts()
-  const [data, setData] = useState<Transaction[]>([])
-  const [loading, setLoading] = useState(false)
-  const [accountFilter, setAccountFilter] = useState<string>('')
+  const { accounts, activeAccounts, loading: accountsLoading, selectedAccount, setSelectedAccount, stocks, stocksLoading } = useAccounts()
+  const data = stocks as Transaction[]
+  const loading = stocksLoading
+  const accountFilter = selectedAccount
+  const setAccountFilter = setSelectedAccount
   const [stockFilter, setStockFilter] = useState<string>('')
   const [stockSearchOpen, setStockSearchOpen] = useState(false)
   const [stockSearchValue, setStockSearchValue] = useState('')
@@ -128,52 +129,17 @@ export default function ProfitLossPage() {
     const stocks = new Set(data.filter(t => t.action === 'Sell').map(t => t.stock))
     return Array.from(stocks).sort()
   }, [data])
-  
+
   // Get unique fiscal years from data
   const uniqueYears = useMemo(() => {
     const fiscalYears = new Set(data.filter(t => t.action === 'Sell').map(t => {
       const date = new Date(t.date)
-      const month = date.getMonth() + 1 // getMonth() returns 0-11, so add 1
+      const month = date.getMonth() + 1
       const year = date.getFullYear()
-      
-      // Indian fiscal year runs from April 1 to March 31
-      // If month is Jan-Mar, it belongs to previous fiscal year
-      // If month is Apr-Dec, it belongs to current fiscal year
       return month >= 4 ? year : year - 1
     }))
     return Array.from(fiscalYears).sort((a, b) => b - a)
   }, [data])
-
-  useEffect(() => {
-    if (accountFilter) {
-      fetchData()
-    }
-  }, [accountFilter])
-
-  const fetchData = async () => {
-    setLoading(true)
-    try {
-      const response = await fetch(`/api/stocks?mode=all`)
-      
-      if (!response.ok) {
-        console.error('Failed to fetch stocks:', response.status)
-        setData([])
-        return
-      }
-      
-      const result = await response.json()
-      if (Array.isArray(result)) {
-        setData(result)
-      } else {
-        setData([])
-      }
-    } catch (error) {
-      console.error('Failed to fetch transactions:', error)
-      setData([])
-    } finally {
-      setLoading(false)
-    }
-  }
 
   // Match sells with buys using FIFO/LIFO logic and flatten the structure
   const flattenedPnLData = useMemo(() => {
