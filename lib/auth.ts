@@ -1,40 +1,55 @@
-import { NextAuthOptions } from "next-auth"
-import CredentialsProvider from "next-auth/providers/credentials"
+import { NextAuthOptions } from 'next-auth'
+import CredentialsProvider from 'next-auth/providers/credentials'
+
+type UiMode = 'classic' | 'modern'
+
+const USER_UI_MODE: Record<string, UiMode> = {
+  GRS: 'classic',
+  LKS: 'modern',
+}
 
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
-      name: "Credentials",
+      name: 'Credentials',
       credentials: {
-        username: { label: "Username", type: "text" },
-        password: { label: "Password", type: "password" }
+        username: { label: 'Username', type: 'text' },
+        password: { label: 'Password', type: 'password' },
       },
       async authorize(credentials) {
-        if (!credentials?.username || !credentials?.password) {
-          return null
+        if (!credentials?.username || !credentials?.password) return null
+        const username = credentials.username.trim()
+        const mode = USER_UI_MODE[username]
+        if (!mode) return null
+        if (credentials.password !== process.env.APP_PASSWORD) return null
+        return {
+          id: username,
+          name: username,
+          email: `${username.toLowerCase()}@stockapp.local`,
+          username,
+          uiMode: mode,
         }
-
-        // Simple string comparison - no hashing
-        const validUsername = credentials.username === process.env.ADMIN_USERNAME
-        const validPassword = credentials.password === process.env.ADMIN_PASSWORD
-
-        if (validUsername && validPassword) {
-          return {
-            id: "1",
-            name: "Admin",
-            email: "admin@stockapp.com"
-          }
-        }
-
-        return null
-      }
-    })
+      },
+    }),
   ],
-  pages: {
-    signIn: "/login",
-  },
-  session: {
-    strategy: "jwt",
+  pages: { signIn: '/login' },
+  session: { strategy: 'jwt' },
+  callbacks: {
+    async jwt({ token, user }) {
+      if (user) {
+        token.username = (user as any).username
+        token.uiMode = (user as any).uiMode
+      }
+      return token
+    },
+    async session({ session, token }) {
+      if (session.user) {
+        ;(session.user as any).username = token.username
+        ;(session.user as any).uiMode = token.uiMode
+        ;(session.user as any).id = token.username
+      }
+      return session
+    },
   },
   secret: process.env.NEXTAUTH_SECRET,
 }
