@@ -11,6 +11,7 @@ const primaryRoutes = [
   { href: '/',              label: 'Dashboard' },
   { href: '/transactions',  label: 'Trades'     },
   { href: '/summary-book',  label: 'Summary'    },
+  { href: '/profit-loss',   label: 'P&L'        },
   { href: '/add-stock',     label: 'Add'        },
   { href: '/modify',        label: 'Edit'       },
   { href: '/accounts',      label: 'Accounts'   },
@@ -18,7 +19,6 @@ const primaryRoutes = [
 
 const moreRoutes = [
   { href: '/holdings',    label: 'Holdings'  },
-  { href: '/profit-loss', label: 'P&L'       },
   { href: '/summary',     label: 'Portfolio' },
 ]
 

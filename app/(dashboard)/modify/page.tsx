@@ -9,13 +9,12 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/use-toast'
 
-import { useSession } from 'next-auth/react'
+import { useUiMode } from '@/lib/ui-mode'
 import { ModifyClassic } from '@/components/classic/modify-classic'
 
 export default function ModifyPage() {
-  const { data: session, status } = useSession()
-  if (status === 'loading') return null
-  if (session?.user?.uiMode === 'classic') return <ModifyClassic />
+  const { mode } = useUiMode()
+  if (mode === 'classic') return <ModifyClassic />
   return <ModifyModern />
 }
 

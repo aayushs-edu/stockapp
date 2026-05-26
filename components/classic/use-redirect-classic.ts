@@ -2,15 +2,15 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { useSession } from 'next-auth/react'
+import { useUiMode } from '@/lib/ui-mode'
 
 export function useRedirectClassic(to: string = '/transactions') {
-  const { data: session, status } = useSession()
+  const { mode } = useUiMode()
   const router = useRouter()
   useEffect(() => {
-    if (status === 'authenticated' && session?.user?.uiMode === 'classic') {
+    if (mode === 'classic') {
       router.replace(to)
     }
-  }, [status, session, router, to])
-  return session?.user?.uiMode === 'classic'
+  }, [mode, router, to])
+  return mode === 'classic'
 }
