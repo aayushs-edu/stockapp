@@ -142,6 +142,8 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (status === 'authenticated') {
+      setLoading(true)
+      setStocksLoading(true)
       fetchAccounts()
       fetchStocks()
       fetchAllAccounts()

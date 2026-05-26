@@ -217,23 +217,20 @@ export function TransactionsClassic() {
       <p style={{ textAlign: 'center', marginTop: 24 }}>
         {/* @ts-ignore */}<font size={4}>Stock Symbol lookup</font>
       </p>
-      <ClassicTable>
-        <tbody>
-          {chunk(distinctStocks, 17).map((row, i) => (
-            <tr key={i}>
-              {row.map((s) => (
-                <ClassicTd key={s}><Link href={`/summary?stock=${s}`}>{s}</Link></ClassicTd>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </ClassicTable>
+      <div className="classic-lookup">
+        {stocksLoading && distinctStocks.length === 0
+          ? Array.from({ length: 84 }).map((_, i) => (
+              <span key={`sk-${i}`} className="classic-lookup-cell">
+                <span className="classic-skeleton" />
+              </span>
+            ))
+          : distinctStocks.map((s) => (
+              <Link key={s} href={`/summary?stock=${s}`} className="classic-lookup-cell" title={s}>
+                {s}
+              </Link>
+            ))}
+      </div>
     </>
   )
 }
 
-function chunk<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = []
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
-  return out
-}

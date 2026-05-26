@@ -71,9 +71,9 @@ export function AllStocksTable() {
   return (
     <Card className="col-span-full">
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
           <CardTitle className="text-sm font-medium">All Stocks</CardTitle>
-          <div className="flex gap-4 text-xs text-muted-foreground">
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
             <span>{stocksSummary.length} total</span>
             <span className="text-emerald-600 dark:text-emerald-400">{activeStocks} active</span>
             <span>{closedStocks} closed</span>
@@ -89,8 +89,20 @@ export function AllStocksTable() {
       </CardHeader>
       <CardContent className="pt-0">
         {stocksLoading ? (
-          <div className="h-24 flex items-center justify-center text-sm text-muted-foreground">
-            Loading...
+          <div className="w-full space-y-4">
+            <div className="flex items-center gap-4">
+              <div className="h-8 w-[140px] rounded-md bg-muted animate-pulse" />
+              <div className="h-8 w-[112px] rounded-md bg-muted animate-pulse" />
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {Array.from({ length: 56 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="h-6 w-24 shrink-0 rounded-md bg-muted animate-pulse"
+                  style={{ animationDelay: `${(i % 14) * 40}ms` }}
+                />
+              ))}
+            </div>
           </div>
         ) : (
           <AllStocksTableClient

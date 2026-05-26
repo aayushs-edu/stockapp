@@ -120,13 +120,13 @@ export function AllStocksTableClient({
         </Select>
       </div>
 
-      <div className="grid grid-cols-6 md:grid-cols-8 lg:grid-cols-11 xl:grid-cols-14 gap-1">
+      <div className="flex flex-wrap gap-1">
         {sortedAndFilteredStocks.map((stock) => (
           <Button
             key={stock.stock}
             variant="outline"
             className={cn(
-              "h-6 px-1.5 py-0.5 flex items-center justify-center transition-all relative overflow-hidden font-normal text-[10px] leading-none min-w-0",
+              "h-6 w-24 px-1.5 py-0.5 flex items-center justify-center transition-all relative overflow-hidden font-normal text-[10px] leading-none shrink-0",
               stock.status === 'Closed' && "bg-gray-100 text-gray-400 border-gray-300 opacity-70 hover:bg-gray-100 hover:border-gray-300 hover:text-gray-400",
               stock.status === 'Active' 
                 ? "hover:bg-green-50 hover:border-green-500 dark:hover:bg-green-950/20" 
