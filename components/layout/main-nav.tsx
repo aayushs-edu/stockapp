@@ -19,7 +19,6 @@ const primaryRoutes = [
 
 const moreRoutes = [
   { href: '/holdings',    label: 'Holdings'  },
-  { href: '/summary',     label: 'Portfolio' },
 ]
 
 const allRoutes = [...primaryRoutes, ...moreRoutes]
