@@ -33,7 +33,8 @@ import { formatCurrency } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { EnhancedDatePicker } from '@/components/ui/enhanced-date-picker'
 import { useAccounts } from '@/components/providers/accounts-provider'
-import { useRedirectClassic } from '@/components/classic/use-redirect-classic'
+import { useUiMode } from '@/lib/ui-mode'
+import { SecondPageClassic } from '@/components/classic/second-page-classic'
 
 type Transaction = {
   id: number
@@ -108,7 +109,12 @@ const PLIDisplay = ({ value, type }: { value: number, type: 'profit' | 'loss' | 
 }
 
 export default function SummaryBookPage() {
-  useRedirectClassic('/transactions')
+  const { mode } = useUiMode()
+  if (mode === 'classic') return <SecondPageClassic />
+  return <SummaryBookModern />
+}
+
+function SummaryBookModern() {
   const searchParams = useSearchParams()
   const stockFromUrl = searchParams.get('stock')
   

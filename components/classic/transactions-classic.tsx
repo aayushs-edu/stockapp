@@ -200,7 +200,7 @@ export function TransactionsClassic() {
                 <tr key={r.id}>
                   <ClassicTd>{r.id}</ClassicTd>
                   <ClassicTd>{format(new Date(r.date), 'dd/MM/yyyy')}</ClassicTd>
-                  <ClassicTd><Link href={`/summary?stock=${r.stock}`}>{r.stock}</Link></ClassicTd>
+                  <ClassicTd>{r.stock}</ClassicTd>
                   <ClassicTd>{r.action}</ClassicTd>
                   <ClassicTd>{r.source ?? ''}</ClassicTd>
                   <ClassicTd>{r.quantity}</ClassicTd>
@@ -225,7 +225,7 @@ export function TransactionsClassic() {
               </span>
             ))
           : distinctStocks.map((s) => (
-              <Link key={s} href={`/summary?stock=${s}`} className="classic-lookup-cell" title={s}>
+              <Link key={s} href={`/summary?value=${s}`} className="classic-lookup-cell" title={s}>
                 {s}
               </Link>
             ))}
