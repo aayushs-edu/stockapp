@@ -18,9 +18,10 @@ function getSortValue(s: StockTransaction, key: SortKey): any {
 export function BalanceClassic() {
   const search = useSearchParams()
   const router = useRouter()
-  const { stocks, allAccounts, selectedAccount } = useAccounts()
+  const { stocks, stocksLoading, allAccounts, selectedAccount } = useAccounts()
 
   const accountParam = search.get('account') ?? selectedAccount ?? ''
+  const showAllAccounts = accountParam === '' || accountParam.toLowerCase() === 'all' || accountParam === 'all-accounts'
   const dateMode = (search.get('date') ?? 'All') as 'All' | 'Range'
   const fromDateStr = search.get('fromDate') ?? ''
   const toDateStr = search.get('toDate') ?? ''
@@ -38,7 +39,7 @@ export function BalanceClassic() {
 
   const rows = useMemo(() => {
     let r = stocks
-    if (accountParam && accountParam !== 'all-accounts') {
+    if (!showAllAccounts) {
       r = r.filter(s => s.userid === accountParam)
     }
     if (dateMode === 'Range') {
@@ -67,7 +68,7 @@ export function BalanceClassic() {
       cmp(a, b, sort2, order2) ||
       (a.id - b.id)
     )
-  }, [stocks, accountParam, dateMode, fromDateStr, toDateStr, txnFilter, stockList, sort1, sort2, order1, order2])
+  }, [stocks, accountParam, showAllAccounts, dateMode, fromDateStr, toDateStr, txnFilter, stockList, sort1, sort2, order1, order2])
 
   const { displayRows, summary } = useMemo(() => {
     let buyQty = 0, sellQty = 0
@@ -95,7 +96,7 @@ export function BalanceClassic() {
 
   const submitWithAccount = (newAccount: string) => {
     const params = new URLSearchParams()
-    params.set('account', newAccount)
+    if (newAccount && newAccount.toLowerCase() !== 'all') params.set('account', newAccount)
     if (valueParam) params.set('value', valueParam)
     params.set('date', dateMode)
     if (fromDateStr) params.set('fromDate', fromDateStr)
@@ -119,7 +120,8 @@ export function BalanceClassic() {
         style={{ textAlign: 'center' }}
       >
         <b>Choose an Account: </b>
-        <select name="account" defaultValue={accountParam}>
+        <select name="account" defaultValue={showAllAccounts ? 'all' : accountParam}>
+          <option value="all">(All)</option>
           {allAccounts.map(a => (
             <option key={a.userid} value={a.userid}>{a.userid}</option>
           ))}
@@ -128,13 +130,14 @@ export function BalanceClassic() {
         <ClassicSubmit value="Submit" />
       </form>
 
-      <p style={{ textAlign: 'center' }}>Account: {accountParam || '(none)'}</p>
+      <p style={{ textAlign: 'center' }}>Account: {showAllAccounts ? '(All)' : accountParam}</p>
 
       <ClassicTable>
         <thead>
           <tr>
             <ClassicTh>S.No.</ClassicTh>
             <ClassicTh>Key</ClassicTh>
+            {showAllAccounts && <ClassicTh>Account</ClassicTh>}
             <ClassicTh>Date</ClassicTh>
             <ClassicTh>Stock</ClassicTh>
             <ClassicTh>Action</ClassicTh>
@@ -148,13 +151,17 @@ export function BalanceClassic() {
           </tr>
         </thead>
         <tbody>
-          {displayRows.length === 0 && (
-            <tr><ClassicTd colSpan={12}>No records.</ClassicTd></tr>
+          {stocksLoading && (
+            <tr><ClassicTd colSpan={showAllAccounts ? 13 : 12}>Loading...</ClassicTd></tr>
+          )}
+          {!stocksLoading && displayRows.length === 0 && (
+            <tr><ClassicTd colSpan={showAllAccounts ? 13 : 12}>No records.</ClassicTd></tr>
           )}
           {displayRows.map(({ idx, tx, netValue }) => (
             <tr key={tx.id}>
               <ClassicTd>{idx}</ClassicTd>
               <ClassicTd>{tx.id}</ClassicTd>
+              {showAllAccounts && <ClassicTd>{tx.userid}</ClassicTd>}
               <ClassicTd>{formatDdMmmYy(new Date(tx.date))}</ClassicTd>
               <ClassicTd>{tx.stock}</ClassicTd>
               <ClassicTd>{tx.action}</ClassicTd>
@@ -179,7 +186,7 @@ export function BalanceClassic() {
                 <ClassicTd colSpan={1} style={{ backgroundColor: '#99cccc' }}>
                   {formatDecimal(summary.brokerage)}
                 </ClassicTd>
-                <ClassicTd colSpan={2} style={{ textAlign: 'center', backgroundColor: '#99cccc' }}>
+                <ClassicTd colSpan={showAllAccounts ? 3 : 2} style={{ textAlign: 'center', backgroundColor: '#99cccc' }}>
                   Sell-Buy(Net value): {formatDecimal(summary.sellMinusBuy)}
                 </ClassicTd>
               </tr>
@@ -190,7 +197,7 @@ export function BalanceClassic() {
                 <ClassicTd colSpan={3} style={{ textAlign: 'center', backgroundColor: '#ffcccf' }}>
                   Sell (Quantity): {summary.sellQty}
                 </ClassicTd>
-                <ClassicTd colSpan={5} style={{ textAlign: 'center', backgroundColor: '#ffcccf' }}>
+                <ClassicTd colSpan={showAllAccounts ? 7 : 6} style={{ textAlign: 'center', backgroundColor: '#ffcccf' }}>
                   Buy-Sell (Quantity of Shares we still have): {summary.buyQty - summary.sellQty}
                 </ClassicTd>
               </tr>

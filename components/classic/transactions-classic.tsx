@@ -2,26 +2,17 @@
 
 import { useState, useMemo } from 'react'
 import Link from 'next/link'
-import { format } from 'date-fns'
+import { useRouter } from 'next/navigation'
 import {
-  ClassicTitle, ClassicTable, ClassicTh, ClassicTd, ClassicSubmit,
+  ClassicTitle, ClassicSubmit,
   ClassicAccountPicker,
 } from './primitives'
 import { useAccounts } from '@/components/providers/accounts-provider'
 
 type SortKey = 'stock' | 'date' | 'action' | 'source' | 'quantity' | 'price' | 'tradeValue'
 
-function parseDDMMYY(s: string): Date | null {
-  if (!s) return null
-  const parts = s.split('/')
-  if (parts.length !== 3) return null
-  const [dd, mm, yy] = parts
-  const year = yy.length === 2 ? 2000 + Number(yy) : Number(yy)
-  const d = new Date(year, Number(mm) - 1, Number(dd))
-  return isNaN(d.getTime()) ? null : d
-}
-
 export function TransactionsClassic() {
+  const router = useRouter()
   const { stocks, stocksLoading, selectedAccount } = useAccounts()
 
   const [dateMode, setDateMode] = useState<'All' | 'Range'>('All')
@@ -33,80 +24,46 @@ export function TransactionsClassic() {
   const [order1, setOrder1] = useState<'ASC' | 'DESC'>('ASC')
   const [sort2, setSort2] = useState<SortKey>('date')
   const [order2, setOrder2] = useState<'ASC' | 'DESC'>('ASC')
-  const [submitted, setSubmitted] = useState(false)
 
   const handleReset = () => {
     setDateMode('All'); setFromDate(''); setToDate('')
     setTransactionType('All'); setStockFilter('')
     setSort1('stock'); setOrder1('ASC')
     setSort2('date'); setOrder2('ASC')
-    setSubmitted(false)
   }
 
-  const rows = useMemo(() => {
-    let r = stocks
+  // FirstPage.jsp submits the form to SecondPage.jsp with all filters as query
+  // params. We mirror that exactly: build the URL and navigate to /summary-book,
+  // which renders SecondPageClassic.
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    const params = new URLSearchParams()
     if (selectedAccount && selectedAccount !== 'all-accounts') {
-      r = r.filter(s => s.userid === selectedAccount)
+      params.set('account', selectedAccount)
     }
+    params.set('date', dateMode)
     if (dateMode === 'Range') {
-      const from = parseDDMMYY(fromDate)
-      const to = parseDDMMYY(toDate)
-      r = r.filter(s => {
-        const d = new Date(s.date)
-        if (from && d < from) return false
-        if (to && d > to) return false
-        return true
-      })
+      if (fromDate) params.set('fromDate', fromDate)
+      if (toDate) params.set('toDate', toDate)
     }
-    if (transactionType !== 'All') r = r.filter(s => s.action === transactionType)
-    if (stockFilter.trim()) {
-      const syms = stockFilter.split(',').map(x => x.trim().toLowerCase()).filter(Boolean)
-      r = r.filter(s => syms.includes(s.stock.toLowerCase()))
-    }
-    const cmp = (a: any, b: any, key: SortKey, dir: 'ASC' | 'DESC') => {
-      const av = a[key]; const bv = b[key]
-      if (av === bv) return 0
-      const less = av < bv ? -1 : 1
-      return dir === 'ASC' ? less : -less
-    }
-    return [...r].sort((a, b) => cmp(a, b, sort1, order1) || cmp(a, b, sort2, order2))
-  }, [stocks, selectedAccount, dateMode, fromDate, toDate, transactionType, stockFilter, sort1, order1, sort2, order2])
+    params.set('transaction', transactionType)
+    const trimmed = stockFilter.trim()
+    if (trimmed) params.set('value', trimmed)
+    params.set('sort1', sort1); params.set('order1', order1)
+    params.set('sort2', sort2); params.set('order2', order2)
+    router.push(`/summary-book?${params.toString()}`)
+  }
 
   const distinctStocks = useMemo(() => {
     const set = new Set(stocks.map(s => s.stock))
     return Array.from(set).sort()
   }, [stocks])
 
-  const exportCsv = () => {
-    const headers = ['Id', 'Date', 'Stock', 'Action', 'Source', 'Quantity', 'Price', 'Trade Value', 'Brokerage']
-    const csvRows = [headers.join(',')]
-    rows.forEach(r => {
-      csvRows.push([
-        r.id,
-        format(new Date(r.date), 'dd/MM/yyyy'),
-        r.stock,
-        r.action,
-        r.source ?? '',
-        r.quantity,
-        r.price,
-        r.tradeValue,
-        r.brokerage,
-      ].join(','))
-    })
-    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' })
-    const url = window.URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `tradebook_${format(new Date(), 'dd-MM-yyyy')}.csv`
-    a.click()
-    window.URL.revokeObjectURL(url)
-  }
-
   return (
     <>
       <ClassicTitle>View Trade Book</ClassicTitle>
 
-      <form onSubmit={(e) => { e.preventDefault(); setSubmitted(true) }}>
+      <form onSubmit={handleSubmit}>
         <p><b>1. </b><ClassicAccountPicker /></p>
 
         <p>
@@ -174,46 +131,6 @@ export function TransactionsClassic() {
         </p>
       </form>
 
-      {submitted && (
-        <>
-          <p className="classic-toolbar">
-            <a href="#" onClick={(e) => { e.preventDefault(); exportCsv() }}>[ Export CSV ]</a>
-          </p>
-          <ClassicTable>
-            <thead>
-              <tr>
-                <ClassicTh>Id</ClassicTh>
-                <ClassicTh>Date</ClassicTh>
-                <ClassicTh>Stock</ClassicTh>
-                <ClassicTh>Action</ClassicTh>
-                <ClassicTh>Source</ClassicTh>
-                <ClassicTh>Quantity</ClassicTh>
-                <ClassicTh>Price</ClassicTh>
-                <ClassicTh>Trade Value</ClassicTh>
-                <ClassicTh>Brokerage</ClassicTh>
-              </tr>
-            </thead>
-            <tbody>
-              {stocksLoading && <tr><ClassicTd colSpan={9}>Loading...</ClassicTd></tr>}
-              {!stocksLoading && rows.length === 0 && <tr><ClassicTd colSpan={9}>No records.</ClassicTd></tr>}
-              {rows.map((r) => (
-                <tr key={r.id}>
-                  <ClassicTd>{r.id}</ClassicTd>
-                  <ClassicTd>{format(new Date(r.date), 'dd/MM/yyyy')}</ClassicTd>
-                  <ClassicTd>{r.stock}</ClassicTd>
-                  <ClassicTd>{r.action}</ClassicTd>
-                  <ClassicTd>{r.source ?? ''}</ClassicTd>
-                  <ClassicTd>{r.quantity}</ClassicTd>
-                  <ClassicTd>{r.price}</ClassicTd>
-                  <ClassicTd>{r.tradeValue}</ClassicTd>
-                  <ClassicTd>{r.brokerage}</ClassicTd>
-                </tr>
-              ))}
-            </tbody>
-          </ClassicTable>
-        </>
-      )}
-
       <p style={{ textAlign: 'center', marginTop: 24 }}>
         {/* @ts-ignore */}<font size={4}>Stock Symbol lookup</font>
       </p>
@@ -233,4 +150,3 @@ export function TransactionsClassic() {
     </>
   )
 }
-

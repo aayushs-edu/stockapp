@@ -153,7 +153,7 @@ export function SummaryClassic() {
   // account and all the inherited filters.
   const submitToSecondPage = (account: string) => {
     const params = new URLSearchParams()
-    params.set('account', account)
+    if (account && account.toLowerCase() !== 'all') params.set('account', account)
     if (valueParam) params.set('value', valueParam)
     params.set('date', dateMode)
     if (fromDateStr) params.set('fromDate', fromDateStr)
@@ -179,7 +179,8 @@ export function SummaryClassic() {
         style={{ textAlign: 'center' }}
       >
         <b>Choose an Account: </b>
-        <select name="account" defaultValue={allAccounts[0]?.userid ?? ''}>
+        <select name="account" defaultValue="all">
+          <option value="all">(All)</option>
           {allAccounts.map(a => (
             <option key={a.userid} value={a.userid}>{a.userid}</option>
           ))}

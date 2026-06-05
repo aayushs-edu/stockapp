@@ -18,10 +18,12 @@ function getSortValue(s: StockTransaction, key: SortKey): any {
 export function SecondPageClassic() {
   const search = useSearchParams()
   const router = useRouter()
-  const { stocks, allAccounts } = useAccounts()
+  const { stocks, stocksLoading, allAccounts } = useAccounts()
 
   // Accept both ?stock= (modern) and ?value= (old JSP) for the stock symbol filter.
+  // account="" or "all" means no account filter (cross-account view).
   const accountParam = search.get('account') ?? ''
+  const showAllAccounts = accountParam === '' || accountParam.toLowerCase() === 'all'
   const dateMode = (search.get('date') ?? 'All') as 'All' | 'Range'
   const fromDateStr = search.get('fromDate') ?? ''
   const toDateStr = search.get('toDate') ?? ''
@@ -39,7 +41,7 @@ export function SecondPageClassic() {
 
   const rows = useMemo(() => {
     let r = stocks
-    if (accountParam) {
+    if (!showAllAccounts) {
       r = r.filter(s => s.userid === accountParam)
     }
     if (dateMode === 'Range') {
@@ -71,7 +73,7 @@ export function SecondPageClassic() {
       cmp(a, b, sort2, order2) ||
       (a.id - b.id)
     )
-  }, [stocks, accountParam, dateMode, fromDateStr, toDateStr, txnFilter, stockList, sort1, sort2, order1, order2])
+  }, [stocks, accountParam, showAllAccounts, dateMode, fromDateStr, toDateStr, txnFilter, stockList, sort1, sort2, order1, order2])
 
   // Per-row + bottom summary derivation, mirroring SecondPage.jsp.
   const { displayRows, summary } = useMemo(() => {
@@ -135,7 +137,7 @@ export function SecondPageClassic() {
   // other filters via hidden inputs (matches the old SecondPage submit flow).
   const submitWithAccount = (newAccount: string) => {
     const params = new URLSearchParams()
-    params.set('account', newAccount)
+    if (newAccount) params.set('account', newAccount)
     if (valueParam) params.set('value', valueParam)
     if (dateMode) params.set('date', dateMode)
     if (fromDateStr) params.set('fromDate', fromDateStr)
@@ -159,7 +161,8 @@ export function SecondPageClassic() {
         style={{ textAlign: 'center' }}
       >
         <b>Choose an Account: </b>
-        <select name="account" defaultValue={accountParam}>
+        <select name="account" defaultValue={showAllAccounts ? 'all' : accountParam}>
+          <option value="all">(All)</option>
           {allAccounts.map(a => (
             <option key={a.userid} value={a.userid}>{a.userid}</option>
           ))}
@@ -169,7 +172,7 @@ export function SecondPageClassic() {
       </form>
 
       <p style={{ textAlign: 'center' }}>
-        Account: {accountParam || '(none)'}{' '}
+        Account: {showAllAccounts ? '(All)' : accountParam}{' '}
         {dateMode === 'Range' && fromDateStr && toDateStr && (
           <>, From Date: {fromDateStr}, To Date: {toDateStr}</>
         )}
@@ -180,6 +183,7 @@ export function SecondPageClassic() {
           <tr>
             <ClassicTh>S.No.</ClassicTh>
             <ClassicTh>Key</ClassicTh>
+            {showAllAccounts && <ClassicTh>Account</ClassicTh>}
             <ClassicTh>Date</ClassicTh>
             <ClassicTh>Stock</ClassicTh>
             <ClassicTh>Action</ClassicTh>
@@ -194,13 +198,17 @@ export function SecondPageClassic() {
           </tr>
         </thead>
         <tbody>
-          {displayRows.length === 0 && (
-            <tr><ClassicTd colSpan={13}>No records.</ClassicTd></tr>
+          {stocksLoading && (
+            <tr><ClassicTd colSpan={showAllAccounts ? 14 : 13}>Loading...</ClassicTd></tr>
+          )}
+          {!stocksLoading && displayRows.length === 0 && (
+            <tr><ClassicTd colSpan={showAllAccounts ? 14 : 13}>No records.</ClassicTd></tr>
           )}
           {displayRows.map(({ idx, tx, netValue, cumulative }) => (
             <tr key={tx.id}>
               <ClassicTd>{idx}</ClassicTd>
               <ClassicTd>{tx.id}</ClassicTd>
+              {showAllAccounts && <ClassicTd>{tx.userid}</ClassicTd>}
               <ClassicTd>{formatDdMmmYy(new Date(tx.date))}</ClassicTd>
               <ClassicTd>{tx.stock}</ClassicTd>
               <ClassicTd>{tx.action}</ClassicTd>
@@ -229,7 +237,7 @@ export function SecondPageClassic() {
                 <ClassicTd colSpan={2} style={{ textAlign: 'center', backgroundColor: '#99cccc' }}>
                   Sell-Buy(Net value): {formatDecimal(summary.sellMinusBuy)}
                 </ClassicTd>
-                <ClassicTd colSpan={2} style={{ textAlign: 'center', backgroundColor: '#ffcccf' }}>
+                <ClassicTd colSpan={showAllAccounts ? 3 : 2} style={{ textAlign: 'center', backgroundColor: '#ffcccf' }}>
                   Buy Average Price of Shares we still have: {summary.remaining > 0 ? formatDecimal(summary.avgBuyPriceRemaining) : 'NA'}
                 </ClassicTd>
               </tr>
@@ -240,12 +248,12 @@ export function SecondPageClassic() {
                 <ClassicTd colSpan={3} style={{ textAlign: 'center', backgroundColor: '#ffcccf' }}>
                   Sell (Quantity): {summary.sellQty}
                 </ClassicTd>
-                <ClassicTd colSpan={5} style={{ textAlign: 'center', backgroundColor: '#ffcccf' }}>
+                <ClassicTd colSpan={showAllAccounts ? 8 : 7} style={{ textAlign: 'center', backgroundColor: '#ffcccf' }}>
                   Buy-Sell (Quantity of Shares we still have): {summary.remaining}
                 </ClassicTd>
               </tr>
               <tr>
-                <ClassicTd colSpan={13} style={{ textAlign: 'center', backgroundColor: '#ffcccf' }}>
+                <ClassicTd colSpan={showAllAccounts ? 14 : 13} style={{ textAlign: 'center', backgroundColor: '#ffcccf' }}>
                   Buy Amount of Shares we still have: {formatDecimal(summary.avgBuyPriceAcc)}
                 </ClassicTd>
               </tr>
