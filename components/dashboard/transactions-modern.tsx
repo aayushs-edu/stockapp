@@ -676,6 +676,7 @@ export function TransactionsModern() {
         open={editDialogOpen}
         onOpenChange={setEditDialogOpen}
         onSuccess={() => { refreshStocks() }}
+        accounts={activeAccounts}
       />
     </div>
   )

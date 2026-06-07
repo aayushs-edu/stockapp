@@ -41,6 +41,7 @@ import { cn } from '@/lib/utils'
 import { useToast } from '@/components/ui/use-toast'
 
 const formSchema = z.object({
+  userid: z.string().min(1, "User is required"),
   date: z.date({
     required_error: "Date is required",
   }),
@@ -75,13 +76,15 @@ interface EditTransactionDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSuccess: () => void
+  accounts?: { userid: string; name: string }[]
 }
 
 export function EditTransactionDialog({
   transaction,
   open,
   onOpenChange,
-  onSuccess
+  onSuccess,
+  accounts = []
 }: EditTransactionDialogProps) {
   const [isLoading, setIsLoading] = useState(false)
   const { toast } = useToast()
@@ -89,6 +92,7 @@ export function EditTransactionDialog({
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
+      userid: '',
       date: new Date(),
       stock: '',
       action: 'Buy',
@@ -106,6 +110,7 @@ export function EditTransactionDialog({
   useEffect(() => {
     if (transaction) {
       form.reset({
+        userid: transaction.userid,
         date: new Date(transaction.date),
         stock: transaction.stock,
         action: transaction.action as 'Buy' | 'Sell',
@@ -146,7 +151,6 @@ export function EditTransactionDialog({
         body: JSON.stringify({
           ...values,
           date: format(values.date, 'yyyy-MM-dd'),
-          userid: transaction.userid,
         }),
       })
 
@@ -187,6 +191,37 @@ export function EditTransactionDialog({
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
+              {/* User Field */}
+              <FormField
+                control={form.control}
+                name="userid"
+                render={({ field }) => {
+                  const options = accounts.some(a => a.userid === field.value)
+                    ? accounts
+                    : [...accounts, { userid: field.value, name: '(current)' }]
+                  return (
+                    <FormItem>
+                      <FormLabel className="text-xs">User</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger className="h-9">
+                            <SelectValue placeholder="Select user" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {options.map((account) => (
+                            <SelectItem key={account.userid} value={account.userid}>
+                              {account.userid} - {account.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )
+                }}
+              />
+
               {/* Date Field */}
               <FormField
                 control={form.control}
