@@ -8,7 +8,7 @@ import {
 import { useAccounts, type StockTransaction } from '@/components/providers/accounts-provider'
 import { formatDecimal, formatDdMmmYy, parseDDMMYY } from './format'
 
-type SortKey = 'stock' | 'date' | 'action' | 'source' | 'quantity' | 'price' | 'tradeValue'
+type SortKey = 'stock' | 'date' | 'action' | 'source' | 'quantity' | 'price' | 'tradeValue' | 'userid'
 
 function getSortValue(s: StockTransaction, key: SortKey): any {
   if (key === 'date') return new Date(s.date).getTime()

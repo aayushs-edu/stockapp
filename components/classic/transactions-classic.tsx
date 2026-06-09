@@ -9,7 +9,7 @@ import {
 } from './primitives'
 import { useAccounts } from '@/components/providers/accounts-provider'
 
-type SortKey = 'stock' | 'date' | 'action' | 'source' | 'quantity' | 'price' | 'tradeValue'
+type SortKey = 'stock' | 'date' | 'action' | 'source' | 'quantity' | 'price' | 'tradeValue' | 'userid'
 
 export function TransactionsClassic() {
   const router = useRouter()
@@ -97,6 +97,7 @@ export function TransactionsClassic() {
           <b>5. Primary Sort By: </b>
           <select value={sort1} onChange={(e) => setSort1(e.target.value as SortKey)}>
             <option value="stock">Stock Symbol</option>
+            <option value="userid">Account</option>
             <option value="date">Date</option>
             <option value="action">Action(Buy/Sell)</option>
             <option value="source">Source</option>
@@ -112,6 +113,7 @@ export function TransactionsClassic() {
           <b>6. Secondary Sort By: </b>
           <select value={sort2} onChange={(e) => setSort2(e.target.value as SortKey)}>
             <option value="stock">Stock Symbol</option>
+            <option value="userid">Account</option>
             <option value="date">Date</option>
             <option value="action">Action(Buy/Sell)</option>
             <option value="source">Source</option>
