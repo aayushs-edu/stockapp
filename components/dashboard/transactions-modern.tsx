@@ -431,6 +431,24 @@ export function TransactionsModern() {
                     placeholder="Search stock..."
                     value={stockSearchValue}
                     onChange={(e) => setStockSearchValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter') return
+                      e.preventDefault()
+                      const term = stockSearchValue.trim()
+                      if (!term) return
+                      const matches = allStocks.filter(s =>
+                        s.toLowerCase().includes(term.toLowerCase())
+                      )
+                      // Prefer an exact symbol match; otherwise accept a lone candidate.
+                      const chosen =
+                        allStocks.find(s => s.toLowerCase() === term.toLowerCase()) ??
+                        (matches.length === 1 ? matches[0] : undefined)
+                      if (chosen) {
+                        setStockFilter(chosen)
+                        setStockSearchOpen(false)
+                        setStockSearchValue('')
+                      }
+                    }}
                     className="m-2"
                   />
                   <div className="max-h-[200px] overflow-y-auto">

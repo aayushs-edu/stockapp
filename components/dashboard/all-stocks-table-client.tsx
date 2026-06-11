@@ -12,9 +12,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Input } from '@/components/ui/input'
 import { formatCurrency } from '@/lib/utils'
 import { cn } from '@/lib/utils'
-import { TrendingUp, TrendingDown, ArrowUpDown } from 'lucide-react'
+import { TrendingUp, TrendingDown, ArrowUpDown, Search } from 'lucide-react'
 import Link from 'next/link'
 
 interface StockData {
@@ -53,17 +54,24 @@ export function AllStocksTableClient({
   const router = useRouter()
   const [sortBy, setSortBy] = useState<'name' | 'lastActivity'>('name')
   const [statusFilter, setStatusFilter] = useState<'all' | 'holding' | 'closed'>('all')
+  const [searchValue, setSearchValue] = useState('')
 
   const sortedAndFilteredStocks = useMemo(() => {
     let filtered = [...stocks]
-    
+
     // Apply status filter
     if (statusFilter === 'holding') {
       filtered = filtered.filter(stock => stock.status === 'Active')
     } else if (statusFilter === 'closed') {
       filtered = filtered.filter(stock => stock.status === 'Closed')
     }
-    
+
+    // Apply search term (live-filters the grid as you type)
+    const term = searchValue.trim().toLowerCase()
+    if (term) {
+      filtered = filtered.filter(stock => stock.stock.toLowerCase().includes(term))
+    }
+
     // Apply sorting
     if (sortBy === 'name') {
       return filtered.sort((a, b) => a.stock.localeCompare(b.stock))
@@ -75,7 +83,7 @@ export function AllStocksTableClient({
         return new Date(b.lastTransaction).getTime() - new Date(a.lastTransaction).getTime()
       })
     }
-  }, [stocks, sortBy, statusFilter])
+  }, [stocks, sortBy, statusFilter, searchValue])
 
   const handleStockClick = (stock: string) => {
     // Navigate to summary-book with "all-accounts" filter and specific stock
@@ -85,39 +93,69 @@ export function AllStocksTableClient({
     router.push(`/summary-book?${searchParams.toString()}`)
   }
 
+  // Smart Enter: jump straight to a stock when the typed text is an exact
+  // symbol match, or when it has narrowed the grid to a single candidate.
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter') return
+    e.preventDefault()
+    const term = searchValue.trim()
+    if (!term) return
+    const symbols = stocks.map(s => s.stock)
+    const matches = symbols.filter(s => s.toLowerCase().includes(term.toLowerCase()))
+    const chosen =
+      symbols.find(s => s.toLowerCase() === term.toLowerCase()) ??
+      (matches.length === 1 ? matches[0] : undefined)
+    if (chosen) handleStockClick(chosen)
+  }
+
   return (
     <div className="w-full space-y-4">
-      <div className="flex items-center gap-4">
-        <Select value={sortBy} onValueChange={(value: 'name' | 'lastActivity') => setSortBy(value)}>
-          <SelectTrigger className="w-[140px] h-8 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="name">
-              <div className="flex items-center gap-2">
-                <ArrowUpDown className="h-3 w-3" />
-                Sort by Name
-              </div>
-            </SelectItem>
-            <SelectItem value="lastActivity">
-              <div className="flex items-center gap-2">
-                <ArrowUpDown className="h-3 w-3" />
-                Sort by Last Activity
-              </div>
-            </SelectItem>
-          </SelectContent>
-        </Select>
+      <div className="grid grid-cols-1 md:grid-cols-3 items-center gap-4">
+        <div className="flex items-center gap-4 md:justify-self-start">
+          <Select value={sortBy} onValueChange={(value: 'name' | 'lastActivity') => setSortBy(value)}>
+            <SelectTrigger className="w-[140px] h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="name">
+                <div className="flex items-center gap-2">
+                  <ArrowUpDown className="h-3 w-3" />
+                  Sort by Name
+                </div>
+              </SelectItem>
+              <SelectItem value="lastActivity">
+                <div className="flex items-center gap-2">
+                  <ArrowUpDown className="h-3 w-3" />
+                  Sort by Last Activity
+                </div>
+              </SelectItem>
+            </SelectContent>
+          </Select>
 
-        <Select value={statusFilter} onValueChange={(value: 'all' | 'holding' | 'closed') => setStatusFilter(value)}>
-          <SelectTrigger className="w-[112px] h-8 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Stocks</SelectItem>
-            <SelectItem value="holding">Holdings Only</SelectItem>
-            <SelectItem value="closed">Closed Only</SelectItem>
-          </SelectContent>
-        </Select>
+          <Select value={statusFilter} onValueChange={(value: 'all' | 'holding' | 'closed') => setStatusFilter(value)}>
+            <SelectTrigger className="w-[112px] h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Stocks</SelectItem>
+              <SelectItem value="holding">Holdings Only</SelectItem>
+              <SelectItem value="closed">Closed Only</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="relative w-full max-w-xs md:justify-self-center">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+          <Input
+            placeholder="Search stock..."
+            value={searchValue}
+            onChange={(e) => setSearchValue(e.target.value)}
+            onKeyDown={handleSearchKeyDown}
+            className="h-8 pl-8 text-xs"
+          />
+        </div>
+
+        <div className="hidden md:block" />
       </div>
 
       <div className="flex flex-wrap gap-1">

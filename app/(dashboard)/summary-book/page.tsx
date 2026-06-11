@@ -627,6 +627,24 @@ function SummaryBookModern() {
                     placeholder="Search stock..."
                     value={stockSearchValue}
                     onChange={(e) => setStockSearchValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter') return
+                      e.preventDefault()
+                      const term = stockSearchValue.trim()
+                      if (!term) return
+                      const matches = uniqueStocks.filter(s =>
+                        s.toLowerCase().includes(term.toLowerCase())
+                      )
+                      // Prefer an exact symbol match; otherwise accept a lone candidate.
+                      const chosen =
+                        uniqueStocks.find(s => s.toLowerCase() === term.toLowerCase()) ??
+                        (matches.length === 1 ? matches[0] : undefined)
+                      if (chosen) {
+                        setStockFilter(chosen)
+                        setStockSearchOpen(false)
+                        setStockSearchValue('')
+                      }
+                    }}
                     className="m-2"
                   />
                   <div className="max-h-[200px] overflow-y-auto">
@@ -864,7 +882,9 @@ function SummaryBookModern() {
                                 <TableRow>
                                   <TableCell colSpan={11} className="p-0">
                                     <div className="bg-muted/20 p-4">
-                                      {account.netQty > 0 && account.remainingTransactions && account.remainingTransactions.length > 0 && (
+                                      {/* Redundant FIFO "Remaining Shares Distribution" block — commented out per request.
+                                          Kept here in case we need to bring it back later. */}
+                                      {/* {account.netQty > 0 && account.remainingTransactions && account.remainingTransactions.length > 0 && (
                                         <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg">
                                           <h4 className="text-sm font-semibold text-blue-800 dark:text-blue-200 mb-2">
                                             Remaining Shares Distribution (FIFO):
@@ -881,8 +901,8 @@ function SummaryBookModern() {
                                             ))}
                                           </div>
                                         </div>
-                                      )}
-                                      
+                                      )} */}
+
                                       <Table>
                                         <TableHeader>
                                           <TableRow className="h-8">
