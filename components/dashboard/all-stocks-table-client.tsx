@@ -69,7 +69,7 @@ export function AllStocksTableClient({
     // Apply search term (live-filters the grid as you type)
     const term = searchValue.trim().toLowerCase()
     if (term) {
-      filtered = filtered.filter(stock => stock.stock.toLowerCase().includes(term))
+      filtered = filtered.filter(stock => stock.stock.toLowerCase().startsWith(term))
     }
 
     // Apply sorting
@@ -101,7 +101,7 @@ export function AllStocksTableClient({
     const term = searchValue.trim()
     if (!term) return
     const symbols = stocks.map(s => s.stock)
-    const matches = symbols.filter(s => s.toLowerCase().includes(term.toLowerCase()))
+    const matches = symbols.filter(s => s.toLowerCase().startsWith(term.toLowerCase()))
     const chosen =
       symbols.find(s => s.toLowerCase() === term.toLowerCase()) ??
       (matches.length === 1 ? matches[0] : undefined)
