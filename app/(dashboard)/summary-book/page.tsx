@@ -152,33 +152,51 @@ function SummaryBookModern() {
     }
   }, [stockFromUrl, data])
 
-  // FIFO calculation for remaining shares
-  const calculateRemainingTransactions = (buyTransactions: Transaction[], totalSoldQty: number): Transaction[] => {
-    if (totalSoldQty <= 0) return buyTransactions
-    
-    const sortedBuyTransactions = [...buyTransactions].sort((a, b) => 
-      new Date(a.date).getTime() - new Date(b.date).getTime()
-    )
-    
-    let remainingSoldQty = totalSoldQty
-    const remainingTransactions: Transaction[] = []
-    
-    for (const buyTx of sortedBuyTransactions) {
-      if (remainingSoldQty <= 0) {
-        remainingTransactions.push(buyTx)
-      } else if (remainingSoldQty >= buyTx.quantity) {
-        remainingSoldQty -= buyTx.quantity
-      } else {
-        const remainingQty = buyTx.quantity - remainingSoldQty
-        remainingTransactions.push({
-          ...buyTx,
-          quantity: remainingQty
-        })
-        remainingSoldQty = 0
-      }
+  // FIFO calculation for remaining shares.
+  // Intraday round-trips (same-day buy + sell) are netted against each other
+  // first so they don't incorrectly eat into older inventory.
+  const calculateRemainingTransactions = (
+    buyTransactions: Transaction[],
+    sellTransactions: Transaction[]
+  ): Transaction[] => {
+    const dateKey = (d: string) => d.slice(0, 10)
+
+    const buyState = buyTransactions.map(tx => ({ tx, remaining: tx.quantity }))
+
+    const sellQtyByDate = new Map<string, number>()
+    sellTransactions.forEach(t => {
+      const key = dateKey(t.date)
+      sellQtyByDate.set(key, (sellQtyByDate.get(key) ?? 0) + t.quantity)
+    })
+
+    // Pass 1: match same-day sells against same-day buys.
+    for (const buy of buyState) {
+      const key = dateKey(buy.tx.date)
+      const sellOnDate = sellQtyByDate.get(key) ?? 0
+      if (sellOnDate <= 0 || buy.remaining <= 0) continue
+      const matched = Math.min(buy.remaining, sellOnDate)
+      buy.remaining -= matched
+      sellQtyByDate.set(key, sellOnDate - matched)
     }
-    
-    return remainingTransactions
+
+    // Pass 2: FIFO any leftover sells against remaining buys, oldest first.
+    let leftoverSoldQty = 0
+    sellQtyByDate.forEach(v => { leftoverSoldQty += v })
+
+    const sorted = [...buyState].sort(
+      (a, b) => new Date(a.tx.date).getTime() - new Date(b.tx.date).getTime()
+    )
+    for (const buy of sorted) {
+      if (leftoverSoldQty <= 0) break
+      if (buy.remaining <= 0) continue
+      const take = Math.min(buy.remaining, leftoverSoldQty)
+      buy.remaining -= take
+      leftoverSoldQty -= take
+    }
+
+    return buyState
+      .filter(b => b.remaining > 0)
+      .map(b => ({ ...b.tx, quantity: b.remaining }))
   }
 
   // Process data into hierarchical structure
@@ -253,7 +271,8 @@ function SummaryBookModern() {
     summaryMap.forEach((stockSummary) => {
       stockSummary.accounts.forEach(account => {
         const buyTransactions = account.transactions.filter(t => t.action === 'Buy')
-        account.remainingTransactions = calculateRemainingTransactions(buyTransactions, account.sellQty)
+        const sellTransactions = account.transactions.filter(t => t.action !== 'Buy')
+        account.remainingTransactions = calculateRemainingTransactions(buyTransactions, sellTransactions)
       })
     })
 
