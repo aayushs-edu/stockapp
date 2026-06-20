@@ -152,51 +152,63 @@ function SummaryBookModern() {
     }
   }, [stockFromUrl, data])
 
-  // FIFO calculation for remaining shares.
-  // Intraday round-trips (same-day buy + sell) are netted against each other
-  // first so they don't incorrectly eat into older inventory.
+  // FIFO calculation for remaining shares. Intraday transactions (identified
+  // by "intraday" in the source) are excluded entirely so they don't eat into
+  // longer-term inventory; the remaining sells are then FIFO-matched against
+  // the remaining buys, oldest first.
+  const isIntraday = (t: Transaction) =>
+    (t.source ?? '').toLowerCase().includes('intraday')
+
   const calculateRemainingTransactions = (
     buyTransactions: Transaction[],
     sellTransactions: Transaction[]
   ): Transaction[] => {
-    const dateKey = (d: string) => d.slice(0, 10)
+    const byDateAsc = (a: Transaction, b: Transaction) =>
+      new Date(a.date).getTime() - new Date(b.date).getTime()
 
-    const buyState = buyTransactions.map(tx => ({ tx, remaining: tx.quantity }))
+    // Net intraday buys against intraday sells first (FIFO within the
+    // intraday set). Any residual flows into the regular FIFO pool: leftover
+    // intraday buys become holdings, leftover intraday sells consume normal
+    // inventory.
+    const intradayBuys = [...buyTransactions.filter(isIntraday)].sort(byDateAsc)
+    const intradaySellQty = sellTransactions
+      .filter(isIntraday)
+      .reduce((s, t) => s + t.quantity, 0)
 
-    const sellQtyByDate = new Map<string, number>()
-    sellTransactions.forEach(t => {
-      const key = dateKey(t.date)
-      sellQtyByDate.set(key, (sellQtyByDate.get(key) ?? 0) + t.quantity)
-    })
-
-    // Pass 1: match same-day sells against same-day buys.
-    for (const buy of buyState) {
-      const key = dateKey(buy.tx.date)
-      const sellOnDate = sellQtyByDate.get(key) ?? 0
-      if (sellOnDate <= 0 || buy.remaining <= 0) continue
-      const matched = Math.min(buy.remaining, sellOnDate)
-      buy.remaining -= matched
-      sellQtyByDate.set(key, sellOnDate - matched)
+    let intradaySellRemaining = intradaySellQty
+    const intradayBuyLeftover: Transaction[] = []
+    for (const buy of intradayBuys) {
+      if (intradaySellRemaining <= 0) {
+        intradayBuyLeftover.push(buy)
+      } else if (intradaySellRemaining >= buy.quantity) {
+        intradaySellRemaining -= buy.quantity
+      } else {
+        intradayBuyLeftover.push({ ...buy, quantity: buy.quantity - intradaySellRemaining })
+        intradaySellRemaining = 0
+      }
     }
 
-    // Pass 2: FIFO any leftover sells against remaining buys, oldest first.
-    let leftoverSoldQty = 0
-    sellQtyByDate.forEach(v => { leftoverSoldQty += v })
+    const regularBuys = buyTransactions.filter(t => !isIntraday(t))
+    const regularSellQty = sellTransactions
+      .filter(t => !isIntraday(t))
+      .reduce((s, t) => s + t.quantity, 0)
 
-    const sorted = [...buyState].sort(
-      (a, b) => new Date(a.tx.date).getTime() - new Date(b.tx.date).getTime()
-    )
-    for (const buy of sorted) {
-      if (leftoverSoldQty <= 0) break
-      if (buy.remaining <= 0) continue
-      const take = Math.min(buy.remaining, leftoverSoldQty)
-      buy.remaining -= take
-      leftoverSoldQty -= take
+    // Regular FIFO pool: regular buys + any unmatched intraday buys, oldest first.
+    const sortedBuys = [...regularBuys, ...intradayBuyLeftover].sort(byDateAsc)
+    let remainingSoldQty = regularSellQty + intradaySellRemaining
+
+    const result: Transaction[] = []
+    for (const buy of sortedBuys) {
+      if (remainingSoldQty <= 0) {
+        result.push(buy)
+      } else if (remainingSoldQty >= buy.quantity) {
+        remainingSoldQty -= buy.quantity
+      } else {
+        result.push({ ...buy, quantity: buy.quantity - remainingSoldQty })
+        remainingSoldQty = 0
+      }
     }
-
-    return buyState
-      .filter(b => b.remaining > 0)
-      .map(b => ({ ...b.tx, quantity: b.remaining }))
+    return result
   }
 
   // Process data into hierarchical structure
