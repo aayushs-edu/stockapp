@@ -15,7 +15,7 @@ import {
   ColumnFiltersState,
   FilterFn,
 } from '@tanstack/react-table'
-import { ArrowUpDown, Download, Edit2, Loader2 } from 'lucide-react'
+import { ArrowUpDown, Download, Edit2, Loader2, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -44,6 +44,17 @@ import { formatCurrency } from '@/lib/utils'
 import { EnhancedDatePicker } from '@/components/ui/enhanced-date-picker'
 import { useAccounts } from '@/components/providers/accounts-provider'
 import { EditTransactionDialog } from '@/components/transactions/edit-transaction-dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { useToast } from '@/components/ui/use-toast'
 
 type Transaction = {
   id: number
@@ -94,6 +105,10 @@ export function TransactionsModern() {
 
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
+  const [deletingTransaction, setDeletingTransaction] = useState<Transaction | null>(null)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const { toast } = useToast()
 
   const accountFilter = selectedAccount
   const setAccountFilter = setSelectedAccount
@@ -111,12 +126,37 @@ export function TransactionsModern() {
     setEditDialogOpen(true)
   }
 
+  const handleDeleteTransaction = (transaction: Transaction) => {
+    setDeletingTransaction(transaction)
+    setDeleteDialogOpen(true)
+  }
+
+  const confirmDeleteTransaction = async () => {
+    if (!deletingTransaction) return
+    setIsDeleting(true)
+    try {
+      const res = await fetch(`/api/stocks/${deletingTransaction.id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || 'Failed to delete transaction')
+      }
+      toast({ title: 'Transaction deleted', description: `ID ${deletingTransaction.id} removed.` })
+      setDeleteDialogOpen(false)
+      setDeletingTransaction(null)
+      refreshStocks()
+    } catch (e: any) {
+      toast({ title: 'Delete failed', description: e?.message || 'Unknown error', variant: 'destructive' })
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
   const columns: ColumnDef<Transaction>[] = [
     {
       accessorKey: 'id',
       header: 'ID',
       cell: ({ row }) => (
-        <div className="flex items-center gap-2 w-20">
+        <div className="flex items-center gap-1 w-24">
           <span className="font-mono text-sm">{row.getValue('id')}</span>
           <Button
             variant="ghost"
@@ -126,6 +166,15 @@ export function TransactionsModern() {
             title="Edit transaction"
           >
             <Edit2 className="h-3 w-3" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 opacity-60 hover:opacity-100 hover:text-red-600 hover:bg-red-100 dark:hover:bg-red-950"
+            onClick={() => handleDeleteTransaction(row.original)}
+            title="Delete transaction"
+          >
+            <Trash2 className="h-3 w-3" />
           </Button>
         </div>
       ),
@@ -701,6 +750,34 @@ export function TransactionsModern() {
         onSuccess={() => { refreshStocks() }}
         accounts={activeAccounts}
       />
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete transaction?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deletingTransaction ? (
+                <>
+                  This will permanently delete transaction <span className="font-mono">#{deletingTransaction.id}</span>{' '}
+                  ({deletingTransaction.action} {deletingTransaction.quantity} {deletingTransaction.stock} @ {formatCurrency(deletingTransaction.price)}).
+                  This action cannot be undone.
+                </>
+              ) : 'This action cannot be undone.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); confirmDeleteTransaction() }}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

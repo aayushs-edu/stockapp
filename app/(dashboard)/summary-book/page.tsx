@@ -4,7 +4,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { format } from 'date-fns'
 import { useSearchParams } from 'next/navigation'
-import { ChevronDown, ChevronRight, Download, TrendingUp, TrendingDown, Loader2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Download, TrendingUp, TrendingDown, Loader2, Edit2, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -35,6 +35,18 @@ import { EnhancedDatePicker } from '@/components/ui/enhanced-date-picker'
 import { useAccounts } from '@/components/providers/accounts-provider'
 import { useUiMode } from '@/lib/ui-mode'
 import { SecondPageClassic } from '@/components/classic/second-page-classic'
+import { EditTransactionDialog } from '@/components/transactions/edit-transaction-dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { useToast } from '@/components/ui/use-toast'
 
 type Transaction = {
   id: number
@@ -68,6 +80,7 @@ type AccountSummary = {
   totalBrokerage: number
   transactions: Transaction[]
   remainingTransactions?: Transaction[]
+  intradayQtyById?: Map<number, number>
 }
 
 type StockSummary = {
@@ -118,7 +131,43 @@ function SummaryBookModern() {
   const searchParams = useSearchParams()
   const stockFromUrl = searchParams.get('stock')
   
-  const { accounts, activeAccounts, loading: accountsLoading, selectedAccount, setSelectedAccount, stocks, stocksLoading } = useAccounts()
+  const { accounts, activeAccounts, loading: accountsLoading, selectedAccount, setSelectedAccount, stocks, stocksLoading, refreshStocks } = useAccounts()
+  const { toast } = useToast()
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null)
+  const [editDialogOpen, setEditDialogOpen] = useState(false)
+  const [deletingTransaction, setDeletingTransaction] = useState<Transaction | null>(null)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  const handleEditTransaction = (transaction: Transaction) => {
+    setEditingTransaction(transaction)
+    setEditDialogOpen(true)
+  }
+
+  const handleDeleteTransaction = (transaction: Transaction) => {
+    setDeletingTransaction(transaction)
+    setDeleteDialogOpen(true)
+  }
+
+  const confirmDeleteTransaction = async () => {
+    if (!deletingTransaction) return
+    setIsDeleting(true)
+    try {
+      const res = await fetch(`/api/stocks/${deletingTransaction.id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || 'Failed to delete transaction')
+      }
+      toast({ title: 'Transaction deleted', description: `ID ${deletingTransaction.id} removed.` })
+      setDeleteDialogOpen(false)
+      setDeletingTransaction(null)
+      refreshStocks()
+    } catch (e: any) {
+      toast({ title: 'Delete failed', description: e?.message || 'Unknown error', variant: 'destructive' })
+    } finally {
+      setIsDeleting(false)
+    }
+  }
   const data = stocks as Transaction[]
   const loading = stocksLoading
   const accountFilter = selectedAccount
@@ -152,50 +201,107 @@ function SummaryBookModern() {
     }
   }, [stockFromUrl, data])
 
-  // FIFO calculation for remaining shares. Intraday transactions (identified
-  // by "intraday" in the source) are excluded entirely so they don't eat into
-  // longer-term inventory; the remaining sells are then FIFO-matched against
-  // the remaining buys, oldest first.
-  const isIntraday = (t: Transaction) =>
-    (t.source ?? '').toLowerCase().includes('intraday')
+  // FIFO calculation for remaining shares. Same-day buys and sells (by IST
+  // calendar date) are netted against each other first — that residual is
+  // intraday and never reaches holdings. Leftover same-day buys flow into
+  // the regular FIFO pool as holdings; leftover same-day sells consume
+  // older inventory.
+
+  // Data is entered in India; key by IST calendar date (UTC+5:30) so a
+  // buy/sell pair entered on the same Indian day are grouped together
+  // regardless of how the timestamps land in the viewer's timezone.
+  const istDateKey = (d: string) => {
+    const ms = new Date(d).getTime() + 5.5 * 60 * 60 * 1000
+    const ist = new Date(ms)
+    return `${ist.getUTCFullYear()}-${ist.getUTCMonth()}-${ist.getUTCDate()}`
+  }
 
   const calculateRemainingTransactions = (
     buyTransactions: Transaction[],
     sellTransactions: Transaction[]
-  ): Transaction[] => {
+  ): { remaining: Transaction[]; intradayQtyById: Map<number, number> } => {
     const byDateAsc = (a: Transaction, b: Transaction) =>
       new Date(a.date).getTime() - new Date(b.date).getTime()
 
-    // Net intraday buys against intraday sells first (FIFO within the
-    // intraday set). Any residual flows into the regular FIFO pool: leftover
-    // intraday buys become holdings, leftover intraday sells consume normal
-    // inventory.
-    const intradayBuys = [...buyTransactions.filter(isIntraday)].sort(byDateAsc)
-    const intradaySellQty = sellTransactions
-      .filter(isIntraday)
-      .reduce((s, t) => s + t.quantity, 0)
+    const intradayQtyById = new Map<number, number>()
+    const addIntraday = (id: number, qty: number) => {
+      if (qty <= 0) return
+      intradayQtyById.set(id, (intradayQtyById.get(id) ?? 0) + qty)
+    }
 
-    let intradaySellRemaining = intradaySellQty
-    const intradayBuyLeftover: Transaction[] = []
-    for (const buy of intradayBuys) {
-      if (intradaySellRemaining <= 0) {
-        intradayBuyLeftover.push(buy)
-      } else if (intradaySellRemaining >= buy.quantity) {
-        intradaySellRemaining -= buy.quantity
-      } else {
-        intradayBuyLeftover.push({ ...buy, quantity: buy.quantity - intradaySellRemaining })
-        intradaySellRemaining = 0
+    // Group by IST date so we can detect same-day pairs.
+    const buysByDate = new Map<string, Transaction[]>()
+    buyTransactions.forEach(t => {
+      const k = istDateKey(t.date)
+      if (!buysByDate.has(k)) buysByDate.set(k, [])
+      buysByDate.get(k)!.push(t)
+    })
+    const sellsByDate = new Map<string, Transaction[]>()
+    sellTransactions.forEach(t => {
+      const k = istDateKey(t.date)
+      if (!sellsByDate.has(k)) sellsByDate.set(k, [])
+      sellsByDate.get(k)!.push(t)
+    })
+
+    const regularBuys: Transaction[] = []
+    const regularSells: Transaction[] = []
+
+    // Carves `intradayQty` off the front of `txs` (the matched portion is
+    // recorded per-tx in `intradayQtyById` and dropped from holdings); the
+    // remainder is pushed into `regularBucket`.
+    const carve = (txs: Transaction[], intradayQty: number, regularBucket: Transaction[]) => {
+      let remaining = intradayQty
+      for (const tx of txs) {
+        if (remaining <= 0) {
+          regularBucket.push(tx)
+        } else if (remaining >= tx.quantity) {
+          addIntraday(tx.id, tx.quantity)
+          remaining -= tx.quantity
+        } else {
+          addIntraday(tx.id, remaining)
+          regularBucket.push({ ...tx, quantity: tx.quantity - remaining })
+          remaining = 0
+        }
       }
     }
 
-    const regularBuys = buyTransactions.filter(t => !isIntraday(t))
-    const regularSellQty = sellTransactions
-      .filter(t => !isIntraday(t))
-      .reduce((s, t) => s + t.quantity, 0)
+    // Within a day: first pair off exact-quantity buy/sell matches (so a
+    // buy 25 + sell 25 round-trip on the same day is recognised even if
+    // there's another unrelated sell that day). Then greedy-carve the
+    // remainder by smallest qty first.
+    const byQtyAsc = (a: Transaction, b: Transaction) => a.quantity - b.quantity
+    const qtyEq = (a: number, b: number) => Math.abs(a - b) < 1e-9
 
-    // Regular FIFO pool: regular buys + any unmatched intraday buys, oldest first.
-    const sortedBuys = [...regularBuys, ...intradayBuyLeftover].sort(byDateAsc)
-    let remainingSoldQty = regularSellQty + intradaySellRemaining
+    const allDates = new Set<string>([...buysByDate.keys(), ...sellsByDate.keys()])
+    allDates.forEach(date => {
+      const buys = [...(buysByDate.get(date) ?? [])]
+      const sells = [...(sellsByDate.get(date) ?? [])]
+      const usedBuys = new Set<number>()
+      const usedSells = new Set<number>()
+      for (let i = 0; i < buys.length; i++) {
+        for (let j = 0; j < sells.length; j++) {
+          if (usedSells.has(j)) continue
+          if (qtyEq(buys[i].quantity, sells[j].quantity)) {
+            addIntraday(buys[i].id, buys[i].quantity)
+            addIntraday(sells[j].id, sells[j].quantity)
+            usedBuys.add(i)
+            usedSells.add(j)
+            break
+          }
+        }
+      }
+      const restBuys = buys.filter((_, i) => !usedBuys.has(i)).sort(byQtyAsc)
+      const restSells = sells.filter((_, j) => !usedSells.has(j)).sort(byQtyAsc)
+      const buyQty = restBuys.reduce((s, t) => s + t.quantity, 0)
+      const sellQty = restSells.reduce((s, t) => s + t.quantity, 0)
+      const intradayQty = Math.min(buyQty, sellQty)
+      carve(restBuys, intradayQty, regularBuys)
+      carve(restSells, intradayQty, regularSells)
+    })
+
+    // Regular FIFO pool: leftover buys consumed by leftover sells, oldest first.
+    const sortedBuys = [...regularBuys].sort(byDateAsc)
+    let remainingSoldQty = regularSells.reduce((s, t) => s + t.quantity, 0)
 
     const result: Transaction[] = []
     for (const buy of sortedBuys) {
@@ -208,7 +314,7 @@ function SummaryBookModern() {
         remainingSoldQty = 0
       }
     }
-    return result
+    return { remaining: result, intradayQtyById }
   }
 
   // Process data into hierarchical structure
@@ -284,7 +390,9 @@ function SummaryBookModern() {
       stockSummary.accounts.forEach(account => {
         const buyTransactions = account.transactions.filter(t => t.action === 'Buy')
         const sellTransactions = account.transactions.filter(t => t.action !== 'Buy')
-        account.remainingTransactions = calculateRemainingTransactions(buyTransactions, sellTransactions)
+        const { remaining, intradayQtyById } = calculateRemainingTransactions(buyTransactions, sellTransactions)
+        account.remainingTransactions = remaining
+        account.intradayQtyById = intradayQtyById
       })
     })
 
@@ -937,7 +1045,7 @@ function SummaryBookModern() {
                                       <Table>
                                         <TableHeader>
                                           <TableRow className="h-8">
-                                            <TableHead className="w-20 py-1">ID</TableHead>
+                                            <TableHead className="w-28 py-1">ID</TableHead>
                                             <TableHead className="py-1">Date</TableHead>
                                             <TableHead className="py-1">Action</TableHead>
                                             <TableHead className="py-1">Source</TableHead>
@@ -961,31 +1069,62 @@ function SummaryBookModern() {
                                             )
                                             const isRemainingTransaction = !!remainingTransaction
                                             const isFullySold = transaction.action === 'Buy' && !isRemainingTransaction
-                                            const isPartiallySold = transaction.action === 'Buy' && 
-                                              remainingTransaction && 
+                                            const isPartiallySold = transaction.action === 'Buy' &&
+                                              remainingTransaction &&
                                               remainingTransaction.quantity < transaction.quantity
+                                            const intradayQty = account.intradayQtyById?.get(transaction.id) ?? 0
+                                            const isFullyIntraday = intradayQty > 0 && intradayQty >= transaction.quantity
+                                            const isPartiallyIntraday = intradayQty > 0 && intradayQty < transaction.quantity
                                             
                                             return (
-                                              <TableRow 
-                                                key={transaction.id} 
+                                              <TableRow
+                                                key={transaction.id}
                                                 className={cn(
                                                   "hover:bg-muted/30 h-8",
-                                                  isRemainingTransaction && transaction.action === 'Buy' && 
+                                                  isRemainingTransaction && transaction.action === 'Buy' &&
                                                   "bg-blue-50 dark:bg-blue-950/30 border-l-2 border-blue-500",
-                                                  isFullySold && "opacity-50"
+                                                  (isFullySold || (transaction.action === 'Buy' && intradayQty > 0 && !isRemainingTransaction)) && "opacity-50"
                                                 )}
                                               >
                                                 <TableCell className="font-mono text-xs py-1">
-                                                  #{transaction.id}
+                                                  <div className="flex items-center gap-1">
+                                                    <span>#{transaction.id}</span>
+                                                    <Button
+                                                      variant="ghost"
+                                                      size="icon"
+                                                      className="h-6 w-6 opacity-60 hover:opacity-100"
+                                                      onClick={() => handleEditTransaction(transaction)}
+                                                      title="Edit transaction"
+                                                    >
+                                                      <Edit2 className="h-3 w-3" />
+                                                    </Button>
+                                                    <Button
+                                                      variant="ghost"
+                                                      size="icon"
+                                                      className="h-6 w-6 opacity-60 hover:opacity-100 hover:text-red-600 hover:bg-red-100 dark:hover:bg-red-950"
+                                                      onClick={() => handleDeleteTransaction(transaction)}
+                                                      title="Delete transaction"
+                                                    >
+                                                      <Trash2 className="h-3 w-3" />
+                                                    </Button>
+                                                  </div>
                                                   {isRemainingTransaction && transaction.action === 'Buy' && (
                                                     <div className="text-blue-600 dark:text-blue-400 text-[10px]">
-                                                      {isPartiallySold 
+                                                      {isPartiallySold
                                                         ? `${remainingTransaction.quantity}/${transaction.quantity} LEFT`
                                                         : 'HOLDING'
                                                       }
                                                     </div>
                                                   )}
-                                                  {isFullySold && (
+                                                  {intradayQty > 0 && (
+                                                    <div className="text-amber-600 dark:text-amber-400 text-[10px]">
+                                                      {isFullyIntraday
+                                                        ? 'INTRADAY'
+                                                        : `${intradayQty}/${transaction.quantity} INTRADAY`
+                                                      }
+                                                    </div>
+                                                  )}
+                                                  {isFullySold && intradayQty === 0 && (
                                                     <div className="text-gray-500 text-[10px]">SOLD</div>
                                                   )}
                                                 </TableCell>
@@ -1038,6 +1177,42 @@ function SummaryBookModern() {
           </CardContent>
         </Card>
       )}
+
+      <EditTransactionDialog
+        transaction={editingTransaction}
+        open={editDialogOpen}
+        onOpenChange={setEditDialogOpen}
+        onSuccess={() => { refreshStocks() }}
+        accounts={activeAccounts}
+      />
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete transaction?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deletingTransaction ? (
+                <>
+                  This will permanently delete transaction <span className="font-mono">#{deletingTransaction.id}</span>{' '}
+                  ({deletingTransaction.action} {deletingTransaction.quantity} {deletingTransaction.stock} @ {formatCurrency(deletingTransaction.price)}).
+                  This action cannot be undone.
+                </>
+              ) : 'This action cannot be undone.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); confirmDeleteTransaction() }}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
