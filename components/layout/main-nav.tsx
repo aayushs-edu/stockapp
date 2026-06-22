@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState, useRef, useEffect } from 'react'
 import { cn } from '@/lib/utils'
-import { BarChart3, MoreHorizontal, Menu, X } from 'lucide-react'
+import { MoreHorizontal, Menu, X } from 'lucide-react'
 
 const primaryRoutes = [
   { href: '/',              label: 'Dashboard' },
@@ -42,13 +42,7 @@ export function MainNav() {
   const isMoreActive = moreRoutes.some(r => pathname === r.href)
 
   return (
-    <nav className="flex items-center justify-between w-full">
-      {/* Logo */}
-      <Link href="/" className="flex items-center gap-2 shrink-0">
-        <BarChart3 className="h-4 w-4 text-primary" />
-        <span className="font-semibold text-sm">StockApp</span>
-      </Link>
-
+    <nav className="flex items-center justify-end w-full gap-4">
       {/* Desktop Navigation */}
       <div className="hidden lg:flex items-center gap-1">
         {primaryRoutes.map((route) => {

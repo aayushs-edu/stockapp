@@ -1,8 +1,10 @@
 // app/(dashboard)/layout.tsx
 'use client'
 
+import Link from 'next/link'
 import { useSession } from 'next-auth/react'
 import { redirect } from 'next/navigation'
+import { BarChart3 } from 'lucide-react'
 import { MainNav } from '@/components/layout/main-nav'
 import { UserNav } from '@/components/layout/user-nav'
 import { UiModeToggle } from '@/components/layout/ui-mode-toggle'
@@ -26,32 +28,39 @@ export default function DashboardLayout({
     redirect('/login')
   }
 
-  if (mode === 'classic') {
-    return (
-      <>
-        <UiModeToggle />
+  const brand = (
+    <div className="flex items-center gap-3 shrink-0">
+      <Link href="/" className="flex items-center gap-2">
+        <BarChart3 className="h-4 w-4 text-primary" />
+        <span className="font-semibold text-sm">StockApp</span>
+      </Link>
+      <UiModeToggle inline />
+    </div>
+  )
+
+  return (
+    <div className="flex min-h-screen flex-col">
+      <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="container flex h-12 items-center justify-between gap-4">
+          {brand}
+          {mode === 'classic' ? null : (
+            <div className="flex flex-1 items-center justify-end gap-2">
+              <MainNav />
+              <UserNav />
+            </div>
+          )}
+        </div>
+      </header>
+      {mode === 'classic' ? (
         <ClassicShell>
           <ClassicNav />
           <main>{children}</main>
         </ClassicShell>
-      </>
-    )
-  }
-
-  return (
-    <div className="flex min-h-screen flex-col">
-      <UiModeToggle />
-      <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container flex h-12 items-center justify-between">
-          <MainNav />
-          <div className="flex items-center gap-2">
-            <UserNav />
-          </div>
-        </div>
-      </header>
-      <main className="flex-1 container py-4">
-        {children}
-      </main>
+      ) : (
+        <main className="flex-1 container py-4">
+          {children}
+        </main>
+      )}
     </div>
   )
 }
