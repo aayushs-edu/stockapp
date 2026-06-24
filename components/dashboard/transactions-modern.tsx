@@ -2,6 +2,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import { usePersistentState, usePersistentDate } from '@/lib/use-persistent-state'
 import { format } from 'date-fns'
 import {
   ColumnDef,
@@ -112,12 +113,12 @@ export function TransactionsModern() {
 
   const accountFilter = selectedAccount
   const setAccountFilter = setSelectedAccount
-  const [actionFilter, setActionFilter] = useState<string>('all')
-  const [stockFilter, setStockFilter] = useState<string>('')
+  const [actionFilter, setActionFilter] = usePersistentState<string>('transactions.actionFilter', 'all')
+  const [stockFilter, setStockFilter] = usePersistentState<string>('transactions.stockFilter', '')
   const [stockSearchOpen, setStockSearchOpen] = useState(false)
   const [stockSearchValue, setStockSearchValue] = useState('')
-  const [dateFrom, setDateFrom] = useState<Date>()
-  const [dateTo, setDateTo] = useState<Date>()
+  const [dateFrom, setDateFrom] = usePersistentDate('transactions.dateFrom')
+  const [dateTo, setDateTo] = usePersistentDate('transactions.dateTo')
 
   const allStocks = useMemo(() => Array.from(new Set(stocks.map(t => t.stock))).sort(), [stocks])
 

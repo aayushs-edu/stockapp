@@ -2,6 +2,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
+import { usePersistentState } from '@/lib/use-persistent-state'
 import { format } from 'date-fns'
 import { Download, TrendingUp, TrendingDown, Loader2, Calendar, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -119,10 +120,21 @@ export function ProfitLossModern() {
   const loading = stocksLoading
   const accountFilter = selectedAccount
   const setAccountFilter = setSelectedAccount
-  const [stockFilter, setStockFilter] = useState<string>('')
+  const [stockFilter, setStockFilter] = usePersistentState<string>('pnl.stockFilter', '')
   const [stockSearchOpen, setStockSearchOpen] = useState(false)
   const [stockSearchValue, setStockSearchValue] = useState('')
-  const [yearFilter, setYearFilter] = useState<string>('all')
+  const currentFiscalYear = useMemo(() => {
+    const now = new Date()
+    const month = now.getMonth() + 1
+    const year = now.getFullYear()
+    return month >= 4 ? year : year - 1
+  }, [])
+  const [yearFilter, setYearFilter] = usePersistentState<string>('pnl.yearFilter', String(currentFiscalYear))
+  const [yearFilterTouched, setYearFilterTouched] = usePersistentState<boolean>('pnl.yearFilterTouched', false)
+  const handleYearFilterChange = (v: string) => {
+    setYearFilterTouched(true)
+    setYearFilter(v)
+  }
 
   // Get unique stocks for autocomplete
   const uniqueStocks = useMemo(() => {
@@ -140,6 +152,13 @@ export function ProfitLossModern() {
     }))
     return Array.from(fiscalYears).sort((a, b) => b - a)
   }, [data])
+
+  // If the user hasn't picked a year and current FY has no sells, fall back to All.
+  useEffect(() => {
+    if (yearFilterTouched) return
+    if (uniqueYears.length === 0) return
+    if (!uniqueYears.includes(currentFiscalYear)) setYearFilter('all')
+  }, [uniqueYears, currentFiscalYear, yearFilterTouched])
 
   // Match sells with buys using FIFO/LIFO logic and flatten the structure
   const flattenedPnLData = useMemo(() => {
@@ -197,104 +216,129 @@ export function ProfitLossModern() {
         
         // Keep ALL buys regardless of year filter for proper matching
         const buys = sortedTransactions.filter(t => t.action === 'Buy')
-        
+
         const remainingBuys = buys.map(buy => ({
           ...buy,
           remainingQty: buy.quantity
         }))
-        
-        for (const sell of sells) {
-          const sellDate = new Date(sell.date)
-          let remainingSellQty = sell.quantity
-          
-          // Check if this is an intraday sell (LIFO)
-          const intradayBuys = remainingBuys.filter(buy => 
-            new Date(buy.date).toDateString() === sellDate.toDateString() && 
-            buy.remainingQty > 0
-          ).reverse() // Reverse for LIFO
-          
-          // First, match with intraday buys (LIFO)
-          for (const buy of intradayBuys) {
-            if (remainingSellQty <= 0) break
-            
-            const matchQty = Math.min(remainingSellQty, buy.remainingQty)
-            if (matchQty > 0) {
-              const costBasis = matchQty * buy.price + (buy.brokerage * matchQty / buy.quantity)
-              const sellValue = matchQty * sell.price - (sell.brokerage * matchQty / sell.quantity)
-              const pnl = sellValue - costBasis
-              const pnlPercent = costBasis > 0 ? (pnl / costBasis) * 100 : 0
-              const holdingDays = calculateHoldingPeriod(buy.date, sell.date)
-              
-              rows.push({
-                stock,
-                account: userid,
-                accountName: accountData?.name || userid,
-                sellId: sell.id,
-                sellDate: sell.date,
-                sellQty: sell.quantity,
-                sellPrice: sell.price,
-                sellValue,
-                buyId: buy.id,
-                buyDate: buy.date,
-                buyQty: buy.quantity,
-                buyPrice: buy.price,
-                matchedQty: matchQty,
-                costBasis,
-                pnl,
-                pnlPercent,
-                holdingDays,
-                isLongTerm: holdingDays >= 365,
-                isIntraday: true
-              })
-              
-              buy.remainingQty -= matchQty
-              remainingSellQty -= matchQty
+        const sellStates = new Map(sells.map(s => [s.id, { ...s, remainingQty: s.quantity }]))
+
+        const addRow = (
+          buy: typeof remainingBuys[number],
+          sell: Transaction,
+          matchQty: number,
+          isIntraday: boolean
+        ) => {
+          const costBasis = matchQty * buy.price + (buy.brokerage * matchQty / buy.quantity)
+          const sellValue = matchQty * sell.price - (sell.brokerage * matchQty / sell.quantity)
+          const pnl = sellValue - costBasis
+          const pnlPercent = costBasis > 0 ? (pnl / costBasis) * 100 : 0
+          const holdingDays = calculateHoldingPeriod(buy.date, sell.date)
+          rows.push({
+            stock,
+            account: userid,
+            accountName: accountData?.name || userid,
+            sellId: sell.id,
+            sellDate: sell.date,
+            sellQty: sell.quantity,
+            sellPrice: sell.price,
+            sellValue,
+            buyId: buy.id,
+            buyDate: buy.date,
+            buyQty: buy.quantity,
+            buyPrice: buy.price,
+            matchedQty: matchQty,
+            costBasis,
+            pnl,
+            pnlPercent,
+            holdingDays,
+            isLongTerm: !isIntraday && holdingDays >= 365,
+            isIntraday,
+          })
+        }
+
+        // Intraday matching: group by IST calendar date. Exact-quantity pairs
+        // match first (so a same-day buy of qty N pairs with a sell of qty N
+        // even if there are other unrelated rows that day). Remainder is then
+        // matched smallest-qty-first up to min(buyQty, sellQty) for that day.
+        // Mirrors the algorithm in the summary book so both pages agree.
+        const QTY_EPS = 1e-9
+        const istDateKey = (d: string) => {
+          const ms = new Date(d).getTime() + 5.5 * 60 * 60 * 1000
+          const ist = new Date(ms)
+          return `${ist.getUTCFullYear()}-${ist.getUTCMonth()}-${ist.getUTCDate()}`
+        }
+        const buysByDay = new Map<string, typeof remainingBuys>()
+        remainingBuys.forEach(b => {
+          const k = istDateKey(b.date)
+          if (!buysByDay.has(k)) buysByDay.set(k, [])
+          buysByDay.get(k)!.push(b)
+        })
+        const sellsByDay = new Map<string, Transaction[]>()
+        sells.forEach(s => {
+          const k = istDateKey(s.date)
+          if (!sellsByDay.has(k)) sellsByDay.set(k, [])
+          sellsByDay.get(k)!.push(s)
+        })
+        const allDays = new Set<string>([...Array.from(buysByDay.keys()), ...Array.from(sellsByDay.keys())])
+        allDays.forEach(day => {
+          const dayBuys = (buysByDay.get(day) ?? []).filter(b => b.remainingQty > QTY_EPS)
+          const daySells = (sellsByDay.get(day) ?? []).filter(s => (sellStates.get(s.id)?.remainingQty ?? 0) > QTY_EPS)
+          if (!dayBuys.length || !daySells.length) return
+
+          // Exact-quantity pair pass.
+          const usedBuy = new Set<number>()
+          const usedSell = new Set<number>()
+          for (let i = 0; i < dayBuys.length; i++) {
+            for (let j = 0; j < daySells.length; j++) {
+              if (usedSell.has(j)) continue
+              const buy = dayBuys[i]
+              const sell = daySells[j]
+              if (Math.abs(buy.remainingQty - (sellStates.get(sell.id)!.remainingQty)) < QTY_EPS) {
+                const matchQty = buy.remainingQty
+                addRow(buy, sell, matchQty, true)
+                buy.remainingQty = 0
+                sellStates.get(sell.id)!.remainingQty = 0
+                usedBuy.add(i)
+                usedSell.add(j)
+                break
+              }
             }
           }
-          
-          // Then, match with older buys (FIFO) if any quantity remains
-          if (remainingSellQty > 0) {
-            const olderBuys = remainingBuys.filter(buy => 
-              new Date(buy.date) < sellDate && 
-              buy.remainingQty > 0
-            )
-            
-            for (const buy of olderBuys) {
-              if (remainingSellQty <= 0) break
-              
-              const matchQty = Math.min(remainingSellQty, buy.remainingQty)
-              if (matchQty > 0) {
-                const costBasis = matchQty * buy.price + (buy.brokerage * matchQty / buy.quantity)
-                const sellValue = matchQty * sell.price - (sell.brokerage * matchQty / sell.quantity)
-                const pnl = sellValue - costBasis
-                const pnlPercent = costBasis > 0 ? (pnl / costBasis) * 100 : 0
-                const holdingDays = calculateHoldingPeriod(buy.date, sell.date)
-                
-                rows.push({
-                  stock,
-                  account: userid,
-                  accountName: accountData?.name || userid,
-                  sellId: sell.id,
-                  sellDate: sell.date,
-                  sellQty: sell.quantity,
-                  sellPrice: sell.price,
-                  sellValue,
-                  buyId: buy.id,
-                  buyDate: buy.date,
-                  buyQty: buy.quantity,
-                  buyPrice: buy.price,
-                  matchedQty: matchQty,
-                  costBasis,
-                  pnl,
-                  pnlPercent,
-                  holdingDays,
-                  isLongTerm: holdingDays >= 365,
-                  isIntraday: false
-                })
-                
-                buy.remainingQty -= matchQty
-                remainingSellQty -= matchQty
-              }
+
+          // Smallest-first greedy carve on the remainder.
+          const restBuys = dayBuys.filter((_, i) => !usedBuy.has(i)).sort((a, b) => a.remainingQty - b.remainingQty)
+          const restSells = daySells.filter((_, j) => !usedSell.has(j)).sort((a, b) => (sellStates.get(a.id)!.remainingQty) - (sellStates.get(b.id)!.remainingQty))
+          let bi = 0
+          let si = 0
+          while (bi < restBuys.length && si < restSells.length) {
+            const buy = restBuys[bi]
+            const sell = restSells[si]
+            const sState = sellStates.get(sell.id)!
+            if (buy.remainingQty <= QTY_EPS) { bi++; continue }
+            if (sState.remainingQty <= QTY_EPS) { si++; continue }
+            const matchQty = Math.min(buy.remainingQty, sState.remainingQty)
+            addRow(buy, sell, matchQty, true)
+            buy.remainingQty -= matchQty
+            sState.remainingQty -= matchQty
+          }
+        })
+
+        // FIFO match any remaining sell qty against older buys.
+        for (const sell of sells) {
+          const sState = sellStates.get(sell.id)!
+          if (sState.remainingQty <= QTY_EPS) continue
+          const sellDate = new Date(sell.date)
+          const olderBuys = remainingBuys.filter(buy =>
+            new Date(buy.date) < sellDate && buy.remainingQty > QTY_EPS
+          )
+          for (const buy of olderBuys) {
+            if (sState.remainingQty <= QTY_EPS) break
+            const matchQty = Math.min(sState.remainingQty, buy.remainingQty)
+            if (matchQty > 0) {
+              addRow(buy, sell, matchQty, false)
+              buy.remainingQty -= matchQty
+              sState.remainingQty -= matchQty
             }
           }
         }
@@ -617,6 +661,23 @@ export function ProfitLossModern() {
                     placeholder="Search stock..."
                     value={stockSearchValue}
                     onChange={(e) => setStockSearchValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter') return
+                      e.preventDefault()
+                      const term = stockSearchValue.trim()
+                      if (!term) return
+                      const matches = uniqueStocks.filter(s =>
+                        s.toLowerCase().includes(term.toLowerCase())
+                      )
+                      const chosen =
+                        uniqueStocks.find(s => s.toLowerCase() === term.toLowerCase()) ??
+                        (matches.length === 1 ? matches[0] : undefined)
+                      if (chosen) {
+                        setStockFilter(chosen)
+                        setStockSearchOpen(false)
+                        setStockSearchValue('')
+                      }
+                    }}
                     className="m-2"
                   />
                   <div className="max-h-[200px] overflow-y-auto">
@@ -662,7 +723,7 @@ export function ProfitLossModern() {
             </Popover>
 
             {/* Year Filter */}
-            <Select value={yearFilter} onValueChange={setYearFilter}>
+            <Select value={yearFilter} onValueChange={handleYearFilterChange}>
               <SelectTrigger>
                 <SelectValue placeholder="All Years" />
               </SelectTrigger>
@@ -687,6 +748,7 @@ export function ProfitLossModern() {
                   setAccountFilter('')
                   setStockFilter('')
                   setYearFilter('all')
+                  setYearFilterTouched(true)
                 }}
               >
                 Clear All Filters

@@ -33,6 +33,7 @@ import { formatCurrency } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { EnhancedDatePicker } from '@/components/ui/enhanced-date-picker'
 import { useAccounts } from '@/components/providers/accounts-provider'
+import { usePersistentState, usePersistentDate } from '@/lib/use-persistent-state'
 import { useUiMode } from '@/lib/ui-mode'
 import { SecondPageClassic } from '@/components/classic/second-page-classic'
 import { EditTransactionDialog } from '@/components/transactions/edit-transaction-dialog'
@@ -172,12 +173,12 @@ function SummaryBookModern() {
   const loading = stocksLoading
   const accountFilter = selectedAccount
   const setAccountFilter = setSelectedAccount
-  const [stockFilter, setStockFilter] = useState<string>(stockFromUrl || '')
-  const [holdingFilter, setHoldingFilter] = useState<string>('all')
+  const [stockFilter, setStockFilter] = usePersistentState<string>('summaryBook.stockFilter', stockFromUrl || '')
+  const [holdingFilter, setHoldingFilter] = usePersistentState<string>('summaryBook.holdingFilter', 'all')
   const [stockSearchOpen, setStockSearchOpen] = useState(false)
   const [stockSearchValue, setStockSearchValue] = useState('')
-  const [dateFrom, setDateFrom] = useState<Date>()
-  const [dateTo, setDateTo] = useState<Date>()
+  const [dateFrom, setDateFrom] = usePersistentDate('summaryBook.dateFrom')
+  const [dateTo, setDateTo] = usePersistentDate('summaryBook.dateTo')
   const [expandedStocks, setExpandedStocks] = useState<Set<string>>(new Set())
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set())
 
